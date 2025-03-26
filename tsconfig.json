@@ -1,0 +1,28 @@
+{
+  "seeThisUrlForAWhy": "https://www.npmjs.com/package/@tsconfig/node20",
+  "compilerOptions": {
+    "lib": [
+      "es2023"
+    ],
+    "target": "es2022",
+    "outDir": "lib",
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "noUnusedLocals": false,
+    "forceConsistentCasingInFileNames": true,
+    "useUnknownInCatchVariables": false,
+    "noImplicitReturns": true,
+    "noImplicitAny": true,
+    "noErrorTruncation": true,
+  },
+  "compileOnSave": true,
+  "include": [
+    "src/**/*",
+    "scripts/**/*",
+    "migrations-spicedb/**/*",
+  ],
+}

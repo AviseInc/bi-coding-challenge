@@ -1,0 +1,495 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearch", "driverAdapters"]
+}
+
+model Organization {
+  id        String    @id
+  fullName  String    @map(name: "full_name")
+  createdAt DateTime  @default(dbgenerated("clock_timestamp()")) @map(name: "created_at")
+  updatedAt DateTime  @updatedAt @map(name: "updated_at")
+  Company   Company[]
+
+  @@map(name: "organizations")
+}
+
+enum BasePeriod {
+  Month
+  Quarter
+
+  @@map(name: "base_period")
+}
+
+enum Platform {
+  QBO
+  Avise
+  CodatSandbox
+  Xero
+  OracleNetSuite
+
+  @@map(name: "platform")
+}
+
+enum CurrencyCode {
+  AED
+  AFN
+  ALL
+  AMD
+  AOA
+  ARS
+  AUD
+  AWG
+  AZN
+  BAM
+  BBD
+  BDT
+  BGN
+  BHD
+  BIF
+  BMD
+  BND
+  BOB
+  BOV
+  BRL
+  BSD
+  BTN
+  BWP
+  BYN
+  BZD
+  CAD
+  CDF
+  CHE
+  CHF
+  CHW
+  CLF
+  CLP
+  CNY
+  COP
+  COU
+  CRC
+  CUC
+  CUP
+  CVE
+  CZK
+  DJF
+  DKK
+  DOP
+  DZD
+  EGP
+  ERN
+  ETB
+  EUR
+  FJD
+  FKP
+  GBP
+  GEL
+  GHS
+  GIP
+  GMD
+  GNF
+  GTQ
+  GYD
+  HKD
+  HNL
+  HRK
+  HTG
+  HUF
+  IDR
+  ILS
+  INR
+  IQD
+  IRR
+  ISK
+  JMD
+  JOD
+  JPY
+  KES
+  KGS
+  KHR
+  KMF
+  KPW
+  KRW
+  KWD
+  KYD
+  KZT
+  LAK
+  LBP
+  LKR
+  LRD
+  LSL
+  LYD
+  MAD
+  MDL
+  MGA
+  MKD
+  MMK
+  MNT
+  MOP
+  MRU
+  MUR
+  MVR
+  MWK
+  MXN
+  MXV
+  MYR
+  MZN
+  NAD
+  NGN
+  NIO
+  NOK
+  NPR
+  NZD
+  OMR
+  PAB
+  PEN
+  PGK
+  PHP
+  PKR
+  PLN
+  PYG
+  QAR
+  RON
+  RSD
+  RUB
+  RWF
+  SAR
+  SBD
+  SCR
+  SDG
+  SEK
+  SGD
+  SHP
+  SLL
+  SOS
+  SRD
+  SSP
+  STN
+  SVC
+  SYP
+  SZL
+  THB
+  TJS
+  TMT
+  TND
+  TOP
+  TRY
+  TTD
+  TWD
+  TZS
+  UAH
+  UGX
+  USD
+  USN
+  UYI
+  UYU
+  UYW
+  UZS
+  VES
+  VND
+  VUV
+  WST
+  XAF
+  XCD
+  XOF
+  XPF
+  YER
+  ZAR
+  ZMW
+  ZWL
+
+  @@map(name: "currency_code")
+}
+
+model Company {
+  id                   String       @id @default(cuid())
+  name                 String
+  timezone             String
+  platform             Platform     @default(QBO)
+  createdAt            DateTime     @default(dbgenerated("clock_timestamp()")) @map(name: "created_at")
+  updatedAt            DateTime     @updatedAt @map(name: "updated_at")
+  basePeriod           BasePeriod   @map(name: "base_period")
+  fiscalYearStartMonth Int          @map("fiscal_year_start_month")
+  fiscalYearStartDay   Int          @map("fiscal_year_start_day")
+  multiCurrencyEnabled Boolean      @default(false) @map("multicurrency_enabled")
+  homeCurrency         CurrencyCode @default(USD) @map("home_currency")
+  organizationId       String       @map(name: "organization_id")
+
+  organization   Organization   @relation(fields: [organizationId], references: [id])
+  accounts       Account[]
+  dimensions     Dimension[]
+  periods        Period[]
+  tasks          Task[]
+  journalEntries JournalEntry[]
+  vendor         Vendor[]
+  customers      Customer[]
+
+  @@unique([organizationId, name])
+  @@map(name: "companies")
+}
+
+enum UserStatus {
+  Accepted
+  Pending
+  Disabled
+
+  @@map(name: "user_status")
+}
+
+model User {
+  id        String     @id @default(cuid())
+  email     String     @unique @db.Citext
+  fullName  String     @map(name: "full_name")
+  isAdmin   Boolean    @map(name: "is_admin")
+  status    UserStatus @map(name: "status")
+  createdAt DateTime   @default(dbgenerated("clock_timestamp()")) @map(name: "created_at")
+  updatedAt DateTime   @updatedAt @map(name: "updated_at")
+
+  tasksCreated          Task[]         @relation("tasksCreated")
+  tasksAssigned         Task[]         @relation("tasksAssigned")
+  tasksReviewed         Task[]         @relation("tasksReviewer")
+  journalEntriesCreated JournalEntry[] @relation("journalEntryCreator")
+  journalEntriesUpdated JournalEntry[] @relation("journalEntryUpdater")
+
+  @@map(name: "users")
+}
+
+enum AccountClassification {
+  Asset
+  Equity
+  Expense
+  Liability
+  Income
+  Unknown
+
+  @@map(name: "account_classification")
+}
+
+enum AccountSpecialUseType {
+  AccruedExpense
+
+  @@map(name: "account_special_use_type")
+}
+
+model Account {
+  id                 String                 @id @default(cuid())
+  companyId          String                 @unique @map("company_id")
+  source             Platform
+  sourceId           String?                @map("source_id")
+  createdAt          DateTime               @default(dbgenerated("clock_timestamp()")) @map("created_at")
+  active             Boolean                @default(true)
+  parentAccountId    String?                @map("parent_account_id")
+  currency           CurrencyCode
+  fullyQualifiedName String                 @map("fully_qualified_name")
+  name               String
+  classification     AccountClassification
+  accountType        String                 @map("account_type")
+  accountSubType     String?                @map("account_sub_type")
+  specialUseType     AccountSpecialUseType? @map("special_use_type")
+
+  parentAccount Account?      @relation("parentAccount", fields: [parentAccountId], references: [id])
+  childAccounts Account[]     @relation("parentAccount")
+  company       Company       @relation(fields: [companyId], references: [id])
+  tasks         Task[]
+  journalLines  JournalLine[]
+
+  @@unique([companyId, fullyQualifiedName, active])
+  @@map(name: "accounts")
+}
+
+enum PeriodStatus {
+  open
+  closed
+
+  @@map(name: "period_status")
+}
+
+model Period {
+  id          String       @id @default(cuid())
+  companyId   String       @map(name: "company_id")
+  displayName String       @map(name: "display_name")
+  startsOn    DateTime     @map(name: "starts_on") @db.Date
+  endsOn      DateTime     @map(name: "ends_on") @db.Date
+  targetClose DateTime     @map(name: "target_close") @db.Date
+  status      PeriodStatus @default(open)
+  createdAt   DateTime     @default(dbgenerated("clock_timestamp()")) @map(name: "created_at")
+  updatedAt   DateTime     @updatedAt @map(name: "updated_at")
+
+  company        Company        @relation(fields: [companyId], references: [id])
+  journalEntries JournalEntry[]
+
+  @@unique([companyId, displayName])
+  @@unique([companyId, startsOn, endsOn])
+  @@map(name: "periods")
+}
+
+enum JournalEntryStatus {
+  Draft
+  Scheduled
+  Posted
+
+  @@map(name: "journal_entry_status")
+}
+
+model JournalEntry {
+  id              String             @id @default(cuid())
+  displayId       Int                @default(-1) @map(name: "display_id")
+  companyId       String             @map(name: "company_id")
+  entryType       String             @map(name: "entry_type")
+  transactionDate DateTime?          @map(name: "transaction_date") @db.Date
+  createdBy       String?            @map(name: "created_by")
+  createdAt       DateTime           @default(dbgenerated("clock_timestamp()")) @map(name: "created_at")
+  updatedBy       String?            @map(name: "updated_by")
+  updatedAt       DateTime           @updatedAt @map(name: "updated_at")
+  description     String             @default("")
+  periodId        String?            @map(name: "period_id")
+  status          JournalEntryStatus
+
+  period       Period?       @relation(fields: [periodId], references: [id])
+  company      Company       @relation(fields: [companyId], references: [id])
+  journalLines JournalLine[]
+
+  createdByUser User? @relation("journalEntryCreator", fields: [createdBy], references: [id])
+  updatedByUser User? @relation("journalEntryUpdater", fields: [updatedBy], references: [id])
+
+  @@unique([companyId, displayId])
+  @@map("journal_entries")
+}
+
+model JournalLine {
+  id             String  @id @unique @default(cuid())
+  description    String  @default("")
+  amount         Int?
+  journalEntryId String  @map(name: "journal_entry_id")
+  accountId      String? @map(name: "account_id")
+
+  account      Account?     @relation(fields: [accountId], references: [id])
+  journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id])
+
+  @@map(name: "journal_lines")
+}
+
+enum DimensionSource {
+  QBO
+  Avise
+  AviseSystem
+  CodatSandbox
+  Xero
+  OracleNetSuite
+
+  @@map(name: "dimension_source")
+}
+
+model Dimension {
+  id        String          @unique @default(cuid())
+  name      String
+  active    Boolean         @default(true)
+  companyId String          @map(name: "company_id")
+  source    DimensionSource @default(Avise)
+
+  company         Company          @relation(fields: [companyId], references: [id])
+  dimensionValues DimensionValue[]
+
+  @@unique([companyId, name, active, source])
+  @@map(name: "dimensions")
+}
+
+model DimensionValue {
+  id            String     @id @default(cuid())
+  companyId     String     @map("company_id")
+  dimensionName String     @map("dimension_name")
+  value         String
+  description   String?
+  active        Boolean    @default(true)
+  Dimension     Dimension? @relation(fields: [dimensionId], references: [id])
+  dimensionId   String?
+
+  @@map("dimension_values")
+}
+
+enum TaskStatus {
+  planned
+  in_progress
+  completed
+  reviewed
+
+  @@map(name: "task_status")
+}
+
+enum TaskType {
+  account
+  reconciliation
+  category
+  flux
+
+  @@map(name: "task_type")
+}
+
+enum Frequency {
+  monthly
+  quarterly
+  yearly
+
+  @@map(name: "frequency")
+}
+
+model Task {
+  id          String     @id @default(cuid())
+  companyId   String     @map(name: "company_id")
+  title       String
+  description String     @default("")
+  createdAt   DateTime   @default(dbgenerated("clock_timestamp()")) @map(name: "created_at")
+  updatedAt   DateTime   @updatedAt @map(name: "updated_at")
+  createdBy   String?    @map(name: "created_by")
+  dueDate     DateTime   @map(name: "due_date") @db.Date
+  frequency   Frequency
+  status      TaskStatus
+  resolution  String?
+  assignedTo  String?    @map(name: "assigned_to")
+  reviewerId  String?    @map(name: "reviewer_id")
+  category    String?
+  completedOn DateTime?  @map(name: "completed_on")
+  taskType    TaskType   @map("task_type")
+
+  company   Company  @relation(fields: [companyId], references: [id])
+  creator   User?    @relation("tasksCreated", fields: [createdBy], references: [id])
+  assignee  User?    @relation("tasksAssigned", fields: [assignedTo], references: [id])
+  reviewer  User?    @relation("tasksReviewer", fields: [reviewerId], references: [id])
+  Account   Account? @relation(fields: [accountId], references: [id])
+  accountId String?
+
+  @@unique([companyId, id])
+  @@map(name: "tasks")
+}
+
+model Vendor {
+  id          String   @id @default(cuid())
+  companyId   String   @map(name: "company_id")
+  displayName String   @map(name: "display_name")
+  active      Boolean
+  createdAt   DateTime @default(dbgenerated("clock_timestamp()")) @map(name: "created_at")
+  updatedAt   DateTime @updatedAt @map(name: "updated_at")
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, displayName, active])
+  @@map(name: "vendors")
+}
+
+model Customer {
+  id          String   @id @default(cuid())
+  companyId   String   @map(name: "company_id")
+  displayName String   @map(name: "display_name")
+  active      Boolean
+  createdAt   DateTime @default(dbgenerated("clock_timestamp()")) @map(name: "created_at")
+  updatedAt   DateTime @updatedAt @map(name: "updated_at")
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, displayName, active])
+  @@map(name: "customers")
+}
