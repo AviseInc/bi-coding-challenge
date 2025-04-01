@@ -24,8 +24,6 @@ Use this table for a quick guide to the most common commands and when you should
 |----------------------------------------------------------------------|--------------------------------------------------------------------------------------|
 | `pnpm install`                                                       | Every time you `git pull`                                                            
 |
-| `pnpm ci`                                                            | If you think dependencies aren't installed correctly, this will do a clean install   
-|
 | `pnpm exec prisma generate`                                          | Any time `schema/prisma.schema` changes (also when _you_ have changed it on your dev 
  elopment branch!)                                                    |
 | `pnpm run migrate-local`                                             | Any time `migrations/` changes (also when you wrote a migration yourself you want to 
