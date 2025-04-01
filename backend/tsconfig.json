@@ -21,8 +21,8 @@
   },
   "compileOnSave": true,
   "include": [
-    "src/**/*",
-    "scripts/**/*",
-    "migrations-spicedb/**/*",
+    "backend/src/**/*",
+    "backend/scripts/**/*",
+    "migrations-spicedb/**/*"
   ],
 }

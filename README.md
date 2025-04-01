@@ -167,8 +167,8 @@ appropriate level. Any errors or exceptions should also be logged with Winston.
 
 ### FOLDER STRUCTURE (HIGH-LEVEL, NO OPTIONS):
 
-* A backend folder for the Typescript Express application (controllers, services, middlewares, session handling, LLM
+* A "backend" folder for the Typescript Express application (controllers, services, middlewares, session handling, LLM
   interface, data service).
-* A frontend folder for the React application (components for Login, Main, Chat, SQLCanvas, Results, etc.).
+* A "frontend" folder for the React application (components for Login, Main, Chat, SQLCanvas, Results, etc.).
 * A .env file in the root (and a .env.example) containing all variables required by both backend and frontend.
 * A separate file for the LLM system prompt in the backend.

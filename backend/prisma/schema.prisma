@@ -206,7 +206,7 @@ enum CurrencyCode {
 }
 
 model Company {
-  id                   String       @id @default(cuid())
+  id                   String       @id
   name                 String
   timezone             String
   platform             Platform     @default(QBO)
