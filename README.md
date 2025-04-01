@@ -27,6 +27,28 @@ still build on top of the Postgres DB but any Java framework and ORM you are fam
 
 ## Setup
 
+Before you can set up the API, install or configure the following:
+
+- Node: using [`nvm`](https://github.com/nvm-sh/nvm#installing-and-updating) or, [
+  `asdf`](https://www.notion.so/avise/Language-Versioning-with-ASDF-3340c12bf64e43de865d4dd1b51a8165) or [`Homebrew`](https://brew.sh/)
+- [Docker](https://docs.docker.com/get-docker/)
+- [`corepack`](https://nodejs.org/api/corepack.html)
+- If you're using an Apple Silicon Mac, install Rosetta: (`/usr/sbin/softwareupdate --install-rosetta`)
+
+### Corepack Setup
+
+If you have `pnpm` installed globally, you will have to uninstall it, or find another way :tm:.
+
+From the root of the repo, run:
+
+```bash
+corepack enable
+# and then
+corepack prepare
+```
+
+Then follow the instruction in the backend/README.md and frontend/README.md files.
+
 ## Getting Started
 
 You are building a "Business Intelligence" app which can be used to execute detailed SQL queries against a Postgres
