@@ -26,11 +26,11 @@ importers:
         specifier: 5.18.0
         version: 5.18.0(prisma@5.18.0)
       axios:
-        specifier: 1.7.4
-        version: 1.7.4
+        specifier: 1.8.2
+        version: 1.8.2
       axios-retry:
         specifier: 4.4.2
-        version: 4.4.2(axios@1.7.4)
+        version: 4.4.2(axios@1.8.2)
       blend-promise-utils:
         specifier: 1.29.0
         version: 1.29.0
@@ -1404,17 +1404,17 @@ packages:
       possible-typed-array-names: 1.1.0
     dev: true
 
-  /axios-retry@4.4.2(axios@1.7.4):
+  /axios-retry@4.4.2(axios@1.8.2):
     resolution: {integrity: sha512-2fjo9uDNBQjX8+GMEGOFG5TrLMZ3QijjeRYcgBI2MhrsabnvcIAfLxxIhG7+CCD68vPEQY3IM2llV70ZsrqPvA==}
     peerDependencies:
       axios: 0.x || 1.x
     dependencies:
-      axios: 1.7.4
+      axios: 1.8.2
       is-retry-allowed: 2.2.0
     dev: false
 
-  /axios@1.7.4:
-    resolution: {integrity: sha512-DukmaFRnY6AzAALSH4J2M3k6PkaC+MfaAGdEERRWcC9q3/TWQwLpHR8ZRLKTdQ3aBDL64EdluRDjJqKw+BPZEw==}
+  /axios@1.8.2:
+    resolution: {integrity: sha512-ls4GYBm5aig9vWx8AWDSGLpnpDQRtWAfrjU+EuytuODrFBkqesN2RkOQCBzrA1RQNHw1SmRMSDDDSwzNAYQ6Rg==}
     dependencies:
       follow-redirects: 1.15.9
       form-data: 4.0.2

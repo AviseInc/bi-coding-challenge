@@ -43,7 +43,7 @@
     "@paralleldrive/cuid2": "2.2.2",
     "@prisma/adapter-pg": "5.18.0",
     "@prisma/client": "5.18.0",
-    "axios": "1.7.4",
+    "axios": "1.8.2",
     "axios-retry": "4.4.2",
     "blend-promise-utils": "1.29.0",
     "chalk": "4.1.2",
