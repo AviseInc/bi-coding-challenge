@@ -21,6 +21,7 @@
   },
   "compileOnSave": true,
   "include": [
-    "src/**/*"
+    "src/**/*",
+    "scripts/**/*"
   ]
 }

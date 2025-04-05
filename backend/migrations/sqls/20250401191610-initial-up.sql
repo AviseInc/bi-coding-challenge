@@ -27,6 +27,61 @@ CREATE TYPE user_status AS ENUM ('Accepted', 'Pending', 'Disabled');
 
 CREATE TYPE account_classification AS ENUM ('Asset', 'Equity', 'Expense', 'Liability', 'Income', 'Unknown');
 
+CREATE TYPE account_type AS ENUM (
+    -- Asset types
+    'CurrentAsset', 'FixedAsset', 'LongTermAsset',
+    -- Liability types
+    'CurrentLiability', 'LongTermLiability', 'ContingentLiability',
+    -- Equity types
+    'Capital', 'RetainedProfit', 'Reserve',
+    -- Income types
+    'OperatingRevenue', 'NonOperatingRevenue', 'GainOnSale',
+    -- Expense types
+    'DirectExpense', 'IndirectExpense', 'OperatingExpense',
+    -- Unknown type
+    'UncategorizedType'
+);
+
+CREATE TYPE account_sub_type AS ENUM (
+    -- Current Asset subtypes
+    'Cash', 'AccountsReceivable', 'Inventory', 'PrepaidExpenses', 'MarketableSecurities',
+    -- Fixed Asset subtypes
+    'Land', 'Building', 'Equipment', 'Vehicles', 'Furniture',
+    -- Long Term Asset subtypes
+    'Investments', 'Goodwill', 'IntangibleAssets', 'LongTermDeposits', 'DeferredTaxAsset',
+    
+    -- Current Liability subtypes
+    'AccountsPayable', 'ShortTermLoans', 'AccruedLiabilities', 'UnearnedRevenue', 'CurrentPortionOfLTD',
+    -- Long Term Liability subtypes
+    'LongTermDebt', 'Bonds', 'Mortgages', 'PensionLiability', 'DeferredTaxLiability',
+    -- Contingent Liability subtypes
+    'LegalClaims', 'ProductWarranties', 'GuaranteeObligations', 'EnvironmentalLiability',
+    
+    -- Capital subtypes
+    'CommonStock', 'PreferredStock', 'AdditionalPaidInCapital', 'OwnerInvestment', 'PartnerCapital',
+    -- Retained Profit subtypes
+    'RetainedEarnings', 'AccumulatedProfits', 'AccumulatedDeficit', 'UndistributedProfit',
+    -- Reserve subtypes
+    'GeneralReserve', 'CapitalReserve', 'StatutoryReserve', 'RevaluationReserve', 'TreasuryStock',
+    
+    -- Operating Revenue subtypes
+    'SalesRevenue', 'ServiceRevenue', 'CommissionRevenue', 'FeeRevenue', 'SubscriptionRevenue',
+    -- Non-Operating Revenue subtypes
+    'InterestIncome', 'DividendIncome', 'RentalIncome', 'RoyaltyIncome', 'LicensingRevenue',
+    -- Gain On Sale subtypes
+    'GainOnSaleOfAssets', 'GainOnInvestments', 'GainOnDebtSettlement', 'GainOnForeignExchange',
+    
+    -- Direct Expense subtypes
+    'CostOfGoodsSold', 'DirectLabor', 'DirectMaterials', 'ManufacturingOverhead', 'PurchasesDiscounts',
+    -- Indirect Expense subtypes
+    'Salaries', 'Rent', 'Utilities', 'OfficeSupplies', 'Insurance',
+    -- Operating Expense subtypes
+    'Marketing', 'ResearchAndDevelopment', 'Depreciation', 'Amortization', 'Interest',
+    
+    -- Unknown subtype
+    'Uncategorized'
+);
+
 CREATE TYPE account_special_use_type AS ENUM ('AccruedExpense');
 
 CREATE TYPE period_status AS ENUM ('open', 'closed');
@@ -85,8 +140,8 @@ CREATE TABLE accounts (
                           name varchar NOT NULL,
                           active boolean NOT NULL DEFAULT TRUE,
                           classification account_classification NOT NULL,
-                          account_type varchar NOT NULL,
-                          account_sub_type varchar NOT NULL,
+                          account_type account_type NOT NULL,
+                          account_sub_type account_sub_type NOT NULL,
                           special_use_type account_special_use_type,
                           UNIQUE (company_id, fully_qualified_name, active)
 );

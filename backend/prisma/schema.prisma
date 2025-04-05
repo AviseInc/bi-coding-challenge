@@ -1,5 +1,8 @@
 datasource db {
   provider = "postgresql"
+  // Using a PrismaPg adapter in the code to connect with individual Postgres env vars
+  // (POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD)
+  // instead of DATABASE_URL
   url      = env("DATABASE_URL")
 }
 
@@ -272,6 +275,147 @@ enum AccountClassification {
   @@map(name: "account_classification")
 }
 
+enum AccountType {
+  // Asset types
+  CurrentAsset
+  FixedAsset
+  LongTermAsset
+  
+  // Liability types
+  CurrentLiability
+  LongTermLiability
+  ContingentLiability
+  
+  // Equity types
+  Capital
+  RetainedProfit
+  Reserve
+  
+  // Income types
+  OperatingRevenue
+  NonOperatingRevenue
+  GainOnSale
+  
+  // Expense types
+  DirectExpense
+  IndirectExpense
+  OperatingExpense
+  
+  // Unknown type
+  UncategorizedType
+
+  @@map(name: "account_type")
+}
+
+enum AccountSubType {
+  // Current Asset subtypes
+  Cash
+  AccountsReceivable
+  Inventory
+  PrepaidExpenses
+  MarketableSecurities
+  
+  // Fixed Asset subtypes
+  Land
+  Building
+  Equipment
+  Vehicles
+  Furniture
+  
+  // Long Term Asset subtypes
+  Investments
+  Goodwill
+  IntangibleAssets
+  LongTermDeposits
+  DeferredTaxAsset
+  
+  // Current Liability subtypes
+  AccountsPayable
+  ShortTermLoans
+  AccruedLiabilities
+  UnearnedRevenue
+  CurrentPortionOfLTD
+  
+  // Long Term Liability subtypes
+  LongTermDebt
+  Bonds
+  Mortgages
+  PensionLiability
+  DeferredTaxLiability
+  
+  // Contingent Liability subtypes
+  LegalClaims
+  ProductWarranties
+  GuaranteeObligations
+  EnvironmentalLiability
+  
+  // Capital subtypes
+  CommonStock
+  PreferredStock
+  AdditionalPaidInCapital
+  OwnerInvestment
+  PartnerCapital
+  
+  // Retained Profit subtypes
+  RetainedEarnings
+  AccumulatedProfits
+  AccumulatedDeficit
+  UndistributedProfit
+  
+  // Reserve subtypes
+  GeneralReserve
+  CapitalReserve
+  StatutoryReserve
+  RevaluationReserve
+  TreasuryStock
+  
+  // Operating Revenue subtypes
+  SalesRevenue
+  ServiceRevenue
+  CommissionRevenue
+  FeeRevenue
+  SubscriptionRevenue
+  
+  // Non-Operating Revenue subtypes
+  InterestIncome
+  DividendIncome
+  RentalIncome
+  RoyaltyIncome
+  LicensingRevenue
+  
+  // Gain On Sale subtypes
+  GainOnSaleOfAssets
+  GainOnInvestments
+  GainOnDebtSettlement
+  GainOnForeignExchange
+  
+  // Direct Expense subtypes
+  CostOfGoodsSold
+  DirectLabor
+  DirectMaterials
+  ManufacturingOverhead
+  PurchasesDiscounts
+  
+  // Indirect Expense subtypes
+  Salaries
+  Rent
+  Utilities
+  OfficeSupplies
+  Insurance
+  
+  // Operating Expense subtypes
+  Marketing
+  ResearchAndDevelopment
+  Depreciation
+  Amortization
+  Interest
+  
+  // Unknown subtype
+  Uncategorized
+
+  @@map(name: "account_sub_type")
+}
+
 enum AccountSpecialUseType {
   AccruedExpense
 
@@ -288,8 +432,8 @@ model Account {
   fullyQualifiedName String                 @map("fully_qualified_name")
   name               String
   classification     AccountClassification
-  accountType        String                 @map("account_type")
-  accountSubType     String                 @map("account_sub_type")
+  accountType        AccountType            @map("account_type")
+  accountSubType     AccountSubType         @map("account_sub_type")
   specialUseType     AccountSpecialUseType? @map("special_use_type")
 
   parentAccount Account?      @relation("parentAccount", fields: [parentAccountId], references: [id])
