@@ -1,0 +1,42 @@
+{
+  "name": "frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "fix:lint": "eslint . --fix",
+    "fix:format": "prettier --write 'src/**/*.{ts,tsx}'",
+    "check:type": "tsc --noEmit",
+    "check:lint": "eslint .",
+    "check:format": "prettier --check 'src/**/*.{ts,tsx}'",
+    "check": "pnpm check:type && pnpm check:lint && pnpm check:format"
+  },
+  "dependencies": {
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.21.0",
+    "@types/react": "19.0.10",
+    "@types/react-dom": "19.0.4",
+    "@vitejs/plugin-react": "4.3.4",
+    "eslint-plugin-react-hooks": "5.1.0",
+    "eslint-plugin-react-refresh": "0.4.19",
+    "globals": "15.15.0",
+    "vite": "6.2.0"
+  },
+  "prettier": {
+    "printWidth": 100,
+    "overrides": [
+      {
+        "files": "**/*.yaml",
+        "options": {
+          "singleQuote": true
+        }
+      }
+    ]
+  }
+}

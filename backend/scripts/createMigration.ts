@@ -1,4 +1,4 @@
-import path from "node:path";
+import * as path from "node:path";
 import { exec, execSync } from "node:child_process";
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { DateTime } from "luxon";

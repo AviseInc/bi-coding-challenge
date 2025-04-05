@@ -1,10 +1,7 @@
 import "dotenv/config";
 import yargs from "yargs";
-import { BasePeriod, CurrencyCode, Platform, UserStatus } from "@prisma/client";
 import prisma from "../../src/libraries/prisma";
 import { ClackWrapper } from "./clackWrapper";
-
-const ORG_ID = "avise-dev";
 
 async function checkForReadyAndStart(clackWrapper: ClackWrapper, introMessage: string) {
   clackWrapper.introMessage(introMessage);
@@ -123,113 +120,6 @@ async function handleDbMigrations(clackWrapper: ClackWrapper) {
   });
 }
 
-async function writeUserToDb(fullName: string, emailAddress: string) {
-  await prisma.$transaction([
-    prisma.organization.create({
-      data: {
-        id: ORG_ID,
-        fullName: "Avise Inc",
-      },
-    }),
-    prisma.user.create({
-      email: emailAddress,
-      fullName,
-      isAdmin: true,
-      status: UserStatus.Accepted,
-    }),
-  ]);
-}
-
-async function handleInitialUserCreation(clackWrapper: ClackWrapper) {
-  clackWrapper.noteMessage("Creating the local admin user:");
-
-  const fullName = await clackWrapper.text({
-    message: "Enter the full name for the local user.",
-    placeholder: "Local User",
-    defaultValue: "Local User",
-  });
-
-  const email = await clackWrapper.text({
-    message:
-      "Enter the email address for the local user. (if email is avise, you can omit the '@avise.com')",
-    placeholder: "local@avise.com",
-    defaultValue: "local@avise.com",
-  });
-
-  const emailFormatted = ! email.includes("@") ? `${email}@avise.com` : email;
-
-  const confirmed = await clackWrapper.confirm({
-    message: `Going to create user with name: ${fullName} email: ${emailFormatted}. Is this ok?`,
-  });
-
-  if (! confirmed) {
-    handleInitialUserCreation(clackWrapper);
-  }
-
-  await writeUserToDb(fullName, emailFormatted);
-}
-
-async function handleInitialCompanyCreation(clackWrapper: ClackWrapper) {
-  const shouldCreate = await clackWrapper.confirm({
-    message: `Would you like to create a default initial company via this script?`,
-    initialValue: false,
-  });
-
-  if (! shouldCreate) {
-    return;
-  }
-
-  const companyName = await clackWrapper.text({
-    message: "Enter the name of the company",
-    placeholder: "Avise Inc.",
-  });
-
-  const companyId = companyName
-    .replace(/[^-a-zA-Z0-9\s]/g, "")
-    .trim()
-    .replace(/\s+/g, "-")
-    // db constraint
-    .substring(0, 25)
-    .toLowerCase();
-
-  const confirmed = await clackWrapper.confirm({
-    message: `Will create company with name: ${companyName} and id: ${companyId}. Is this ok?`,
-    initialValue: true,
-  });
-
-  if (! confirmed) {
-    handleInitialCompanyCreation(clackWrapper);
-  }
-
-  const user = await prisma.user.findFirst();
-
-  if (! user) {
-    clackWrapper.exit(
-      "Unable to find created user.",
-      new Error("Prisma was unable to find the user record!"),
-    );
-    return;
-  }
-
-  await prisma.company.create({
-    id: companyId,
-    name: companyName,
-    timezone: "America/New_York",
-    platform: Platform.Avise,
-    basePeriod: BasePeriod.Month,
-    fiscalYearStartMonth: 1,
-    fiscalYearStartDay: 1,
-    multiCurrentcyEnabled: false,
-    homeCurrency: CurrencyCode.USD,
-    organizationId: ORG_ID,
-    users: [
-      {
-        id: user.id,
-      },
-    ],
-  });
-}
-
 async function handlePnpmInstall(clackWrapper: ClackWrapper, frozenLockfile: boolean = false) {
   if (frozenLockfile) {
     try {
@@ -260,8 +150,6 @@ async function setupApiFromScratch(clackWrapper: ClackWrapper) {
   await handleFirstTimeDockerSetup(clackWrapper);
   await handleDbMigrations(clackWrapper);
   await handleDbSanityCheck(clackWrapper);
-  await handleInitialUserCreation(clackWrapper);
-  await handleInitialCompanyCreation(clackWrapper);
 }
 
 async function doInitialSetup(clackWrapper: ClackWrapper) {

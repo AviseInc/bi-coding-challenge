@@ -17,12 +17,10 @@
     "useUnknownInCatchVariables": false,
     "noImplicitReturns": true,
     "noImplicitAny": true,
-    "noErrorTruncation": true,
+    "noErrorTruncation": true
   },
   "compileOnSave": true,
   "include": [
-    "backend/src/**/*",
-    "backend/scripts/**/*",
-    "migrations-spicedb/**/*"
-  ],
+    "src/**/*"
+  ]
 }

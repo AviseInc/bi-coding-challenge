@@ -215,18 +215,19 @@ model Company {
   basePeriod           BasePeriod   @map(name: "base_period")
   fiscalYearStartMonth Int          @map("fiscal_year_start_month")
   fiscalYearStartDay   Int          @map("fiscal_year_start_day")
-  multiCurrencyEnabled Boolean      @default(false) @map("multicurrency_enabled")
+  multiCurrencyEnabled Boolean      @default(false) @map("multi_currency_enabled")
   homeCurrency         CurrencyCode @default(USD) @map("home_currency")
   organizationId       String       @map(name: "organization_id")
 
-  organization   Organization   @relation(fields: [organizationId], references: [id])
-  accounts       Account[]
-  dimensions     Dimension[]
-  periods        Period[]
-  tasks          Task[]
-  journalEntries JournalEntry[]
-  vendor         Vendor[]
-  customers      Customer[]
+  organization         Organization           @relation(fields: [organizationId], references: [id])
+  accounts             Account[]
+  dimensions           Dimension[]
+  periods              Period[]
+  tasks                Task[]
+  journalEntries       JournalEntry[]
+  vendor               Vendor[]
+  customers            Customer[]
+  JournalLineDimension JournalLineDimension[]
 
   @@unique([organizationId, name])
   @@map(name: "companies")
@@ -242,10 +243,11 @@ enum UserStatus {
 
 model User {
   id        String     @id @default(cuid())
-  email     String     @unique @db.Citext
+  companyId String     @map(name: "company_id")
+  email     String     @db.Citext
   fullName  String     @map(name: "full_name")
   isAdmin   Boolean    @map(name: "is_admin")
-  status    UserStatus @map(name: "status")
+  status    UserStatus
   createdAt DateTime   @default(dbgenerated("clock_timestamp()")) @map(name: "created_at")
   updatedAt DateTime   @updatedAt @map(name: "updated_at")
 
@@ -255,6 +257,7 @@ model User {
   journalEntriesCreated JournalEntry[] @relation("journalEntryCreator")
   journalEntriesUpdated JournalEntry[] @relation("journalEntryUpdater")
 
+  @@unique([companyId, email])
   @@map(name: "users")
 }
 
@@ -277,9 +280,7 @@ enum AccountSpecialUseType {
 
 model Account {
   id                 String                 @id @default(cuid())
-  companyId          String                 @unique @map("company_id")
-  source             Platform
-  sourceId           String?                @map("source_id")
+  companyId          String                 @map("company_id")
   createdAt          DateTime               @default(dbgenerated("clock_timestamp()")) @map("created_at")
   active             Boolean                @default(true)
   parentAccountId    String?                @map("parent_account_id")
@@ -288,13 +289,12 @@ model Account {
   name               String
   classification     AccountClassification
   accountType        String                 @map("account_type")
-  accountSubType     String?                @map("account_sub_type")
+  accountSubType     String                 @map("account_sub_type")
   specialUseType     AccountSpecialUseType? @map("special_use_type")
 
   parentAccount Account?      @relation("parentAccount", fields: [parentAccountId], references: [id])
   childAccounts Account[]     @relation("parentAccount")
   company       Company       @relation(fields: [companyId], references: [id])
-  tasks         Task[]
   journalLines  JournalLine[]
 
   @@unique([companyId, fullyQualifiedName, active])
@@ -337,17 +337,18 @@ enum JournalEntryStatus {
 
 model JournalEntry {
   id              String             @id @default(cuid())
-  displayId       Int                @default(-1) @map(name: "display_id")
+  displayId       Int                @map(name: "display_id")
   companyId       String             @map(name: "company_id")
   entryType       String             @map(name: "entry_type")
-  transactionDate DateTime?          @map(name: "transaction_date") @db.Date
-  createdBy       String?            @map(name: "created_by")
+  transactionDate DateTime           @map(name: "transaction_date")
+  createdBy       String             @map(name: "created_by")
   createdAt       DateTime           @default(dbgenerated("clock_timestamp()")) @map(name: "created_at")
   updatedBy       String?            @map(name: "updated_by")
   updatedAt       DateTime           @updatedAt @map(name: "updated_at")
   description     String             @default("")
   periodId        String?            @map(name: "period_id")
-  status          JournalEntryStatus
+  status          JournalEntryStatus @default(Posted)
+  deleted         Boolean            @default(false)
 
   period       Period?       @relation(fields: [periodId], references: [id])
   company      Company       @relation(fields: [companyId], references: [id])
@@ -362,13 +363,15 @@ model JournalEntry {
 
 model JournalLine {
   id             String  @id @unique @default(cuid())
+  companyId      String  @map(name: "company_id")
   description    String  @default("")
   amount         Int?
   journalEntryId String  @map(name: "journal_entry_id")
   accountId      String? @map(name: "account_id")
 
-  account      Account?     @relation(fields: [accountId], references: [id])
-  journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id])
+  account               Account?               @relation(fields: [accountId], references: [id])
+  journalEntry          JournalEntry           @relation(fields: [journalEntryId], references: [id])
+  journalLineDimensions JournalLineDimension[]
 
   @@map(name: "journal_lines")
 }
@@ -391,22 +394,25 @@ model Dimension {
   companyId String          @map(name: "company_id")
   source    DimensionSource @default(Avise)
 
-  company         Company          @relation(fields: [companyId], references: [id])
-  dimensionValues DimensionValue[]
+  company               Company                @relation(fields: [companyId], references: [id])
+  dimensionValues       DimensionValue[]
+  journalLineDimensions JournalLineDimension[]
 
   @@unique([companyId, name, active, source])
   @@map(name: "dimensions")
 }
 
 model DimensionValue {
-  id            String     @id @default(cuid())
-  companyId     String     @map("company_id")
-  dimensionName String     @map("dimension_name")
+  id            String  @id @default(cuid())
+  companyId     String  @map("company_id")
+  dimensionId   String
+  dimensionName String  @map("dimension_name")
   value         String
   description   String?
-  active        Boolean    @default(true)
-  Dimension     Dimension? @relation(fields: [dimensionId], references: [id])
-  dimensionId   String?
+  active        Boolean @default(true)
+
+  Dimension             Dimension              @relation(fields: [dimensionId], references: [id])
+  journalLineDimensions JournalLineDimension[]
 
   @@map("dimension_values")
 }
@@ -437,6 +443,21 @@ enum Frequency {
   @@map(name: "frequency")
 }
 
+model JournalLineDimension {
+  id               String @id @default(cuid())
+  companyId        String @map(name: "company_id")
+  journalLineId    String @map(name: "journal_line_id")
+  dimensionId      String @map(name: "dimension_id")
+  dimensionValueId String @map(name: "dimension_value_id")
+  name             String @map(name: "name")
+  value            String @map(name: "value")
+
+  company        Company        @relation(fields: [companyId], references: [id])
+  journalLine    JournalLine    @relation(fields: [journalLineId], references: [id])
+  dimension      Dimension      @relation(fields: [dimensionId], references: [id])
+  dimensionValue DimensionValue @relation(fields: [dimensionValueId], references: [id])
+}
+
 model Task {
   id          String     @id @default(cuid())
   companyId   String     @map(name: "company_id")
@@ -446,21 +467,19 @@ model Task {
   updatedAt   DateTime   @updatedAt @map(name: "updated_at")
   createdBy   String?    @map(name: "created_by")
   dueDate     DateTime   @map(name: "due_date") @db.Date
-  frequency   Frequency
-  status      TaskStatus
+  frequency   Frequency?
+  status      TaskStatus  @default(planned)
   resolution  String?
   assignedTo  String?    @map(name: "assigned_to")
-  reviewerId  String?    @map(name: "reviewer_id")
+  reviewerId  String?    @map(name: "reviewer")
   category    String?
   completedOn DateTime?  @map(name: "completed_on")
   taskType    TaskType   @map("task_type")
 
-  company   Company  @relation(fields: [companyId], references: [id])
-  creator   User?    @relation("tasksCreated", fields: [createdBy], references: [id])
-  assignee  User?    @relation("tasksAssigned", fields: [assignedTo], references: [id])
-  reviewer  User?    @relation("tasksReviewer", fields: [reviewerId], references: [id])
-  Account   Account? @relation(fields: [accountId], references: [id])
-  accountId String?
+  company  Company @relation(fields: [companyId], references: [id])
+  creator  User?   @relation("tasksCreated", fields: [createdBy], references: [id])
+  assignee User?   @relation("tasksAssigned", fields: [assignedTo], references: [id])
+  reviewer User?   @relation("tasksReviewer", fields: [reviewerId], references: [id])
 
   @@unique([companyId, id])
   @@map(name: "tasks")
