@@ -9,14 +9,17 @@ const loggingOptions = (
   config.logDbQueries ? [ "query", "info", "warn", "error" ] : [ "error", "info", "warn" ]
 ).map((level) => ({level: level, emit: "event"}));
 
-// eslint-disable-next-line n/no-process-env
-const connectionString = process.env.DATABASE_URL;
+// Use the postgres config from the application config
+const { host, port, database, user, password } = config.postgres;
 
-if (! connectionString) {
-  throw new Error("Unable to read DATABASE_URL from environment variables.");
-}
+const pool = new Pool({
+  host,
+  port,
+  database,
+  user,
+  password
+});
 
-const pool = new Pool({connectionString});
 const adapter = new PrismaPg(pool);
 
 const prisma = new PrismaClient<Prisma.PrismaClientOptions, "query" | "info" | "warn" | "error">({

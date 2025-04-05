@@ -7,7 +7,11 @@ import { SafeProcessEnv } from "./types";
 // All facets need these, including avise-api-migrate
 const coreValidator = Joi.object<SafeProcessEnv>({
   // Database
-  DATABASE_URL: Joi.string().uri().required(),
+  POSTGRES_HOST: Joi.string().required(),
+  POSTGRES_PORT: Joi.number().port().required(),
+  POSTGRES_DB: Joi.string().required(),
+  POSTGRES_USER: Joi.string().required(),
+  POSTGRES_PASSWORD: Joi.string().required(),
 
   // Logging
   LOG_LEVEL: Joi.string().valid("debug", "info", "warn", "error").default("info"),
