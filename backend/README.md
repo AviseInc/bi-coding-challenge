@@ -31,9 +31,10 @@ A quick guide to the most common commands and when you should run them:
 * `pnpm install` - Every time you `git pull`
 * `pnpm exec prisma generate` - Any time `schema/prisma.schema` changes (also when _you_ have changed it on your
   development branch!)
-* `pnpm run migrate-local` - Any time `migrations/` changes (also when you wrote a migration yourself you want to apply)
+* `pnpm migrate-local` - Any time `migrations/` changes (also when you wrote a migration yourself you want to apply)
 * `docker compose down && docker compose pull && docker compose up -d` - Any time there have been updates to other
   containers in the stack
+* `pnpm generate-data` - Fill the empty DB with fake data
 
 # Running The Backend
 

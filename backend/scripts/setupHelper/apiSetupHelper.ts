@@ -42,14 +42,6 @@ async function handleDockerSetup(clackWrapper: ClackWrapper) {
     command: "docker compose down",
   });
 
-  await clackWrapper.doAsyncSpinner({
-    startMessage: "Logging into docker (check for elevation prompt and confirmation code)",
-    endMessage: "Successfully logged into docker",
-    errorMessage: "Unable to login to docker",
-    command: "docker:login",
-    type: "spawn",
-  });
-
   await handleDockerPull(clackWrapper);
 
   await clackWrapper.doAsyncSpinner({
@@ -72,14 +64,6 @@ async function handleFirstTimeDockerSetup(clackWrapper: ClackWrapper) {
     endMessage: "Successfully stopped docker containers and removed volumes",
     errorMessage: "Unable to stop docker containers and remove volumes",
     command: "docker compose down -v",
-  });
-
-  await clackWrapper.doAsyncSpinner({
-    startMessage: "Logging into docker (check for elevation prompt and confirmation code)",
-    endMessage: "Successfully logged into docker",
-    errorMessage: "Unable to login to docker",
-    command: "docker:login",
-    type: "spawn",
   });
 
   await handleDockerPull(clackWrapper);

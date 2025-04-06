@@ -19,7 +19,7 @@
     "fix": "pnpm fix:lint & pnpm fix:format",
     "fix:format": "prettier --write 'src/**/*.ts' 'scripts/**/*.ts'",
     "fix:lint": "eslint --max-warnings=0 src --ext .ts,.js --fix",
-    "generate-data": "TS_NODE_FILES=true ts-node -r dotenv/config scripts/generateData.ts",
+    "generate-data": "TS_NODE_FILES=true ts-node -r dotenv/config scripts/makeFakeData.ts",
     "initial-setup": "TS_NODE_FILES=true ts-node scripts/setupHelper/apiSetupHelper.ts --initialSetup",
     "migrate-down-one": "db-migrate down -c 1",
     "migrate-local": "db-migrate up",
@@ -27,7 +27,6 @@
     "postinstall": "pnpm exec prisma generate",
     "prebuild": "rm -rf lib/ ",
     "reset-db": "pnpm run drop-remake-db && pnpm run migrate-local",
-    "setup": "pnpm install && pnpm run migrate-local",
     "start": "TS_NODE_FILES=true pnpm exec ts-node -r dotenv/config src/app.ts",
     "start:build": "node ./lib/app.js",
     "start:dev": "nodemon --watch src -e ts --exec pnpm run start"

@@ -19,7 +19,7 @@ async function promisifyExec(input: string): Promise<string> {
 
 // find which shells are available
 function getAvailableShell(): string {
-  const shells = ["zsh", "bash", "sh"];
+  const shells = ["zsh", "bash", "sh", "csh", "tcsh"];
 
   for (const shell of shells) {
     try {
@@ -38,7 +38,7 @@ async function handleOperation() {
   const argsMinusFileName = process.argv.slice(2);
 
   const migrationName = argsMinusFileName[0];
-  await promisifyExec(`db-migrate create ${migrationName}`);
+  await promisifyExec(`db-migrate create ${migrationName} --sql-file`);
 
   const pathToMigrationsFolder = path.join(__dirname, "../migrations");
   const files = readdirSync(pathToMigrationsFolder);

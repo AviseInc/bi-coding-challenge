@@ -12,8 +12,6 @@ const safeEnv: SafeProcessEnv = validateEnvironment();
 const config: ApplicationConfig = {
   aws: awsConfig(safeEnv),
   postgres: postgresConfig(safeEnv),
-  gptModelVersion: safeEnv.GPT_MODEL_VERSION,
-  openAiApiKey: safeEnv.OPENAI_API_KEY,
   logDbQueries: safeEnv.LOG_DB_QUERIES,
   nodeEnv: safeEnv.NODE_ENV,
   port: safeEnv.PORT,
