@@ -15,8 +15,6 @@ export interface PostgresConfig {
 export interface ApplicationConfig {
   aws: AwsConfig;
   postgres: PostgresConfig;
-  gptModelVersion?: string;
-  openAiApiKey?: string;
   logDbQueries: boolean;
   nodeEnv: "development" | "production" | "test";
   port: number;
@@ -35,6 +33,4 @@ export type SafeProcessEnv = {
   LOG_DB_QUERIES: boolean;
   PORT: number;
   NODE_ENV: "development" | "production" | "test";
-  OPENAI_API_KEY?: string;
-  GPT_MODEL_VERSION?: string;
 };

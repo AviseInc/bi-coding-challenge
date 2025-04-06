@@ -32,10 +32,6 @@ const mainValidator = workflowValidator.append({
 
   // AWS, ID and key are loaded automatically by the client via ENV vars
   AWS_S3_ENDPOINT: Joi.string().optional().uri(),
-
-  // OpenAI
-  OPENAI_API_KEY: Joi.string().optional(),
-  GPT_MODEL_VERSION: Joi.string().optional(),
 });
 
 // Use Joi to validate the environment variables and return an intermediate type.
