@@ -280,27 +280,27 @@ enum AccountType {
   CurrentAsset
   FixedAsset
   LongTermAsset
-  
+
   // Liability types
   CurrentLiability
   LongTermLiability
   ContingentLiability
-  
+
   // Equity types
   Capital
   RetainedProfit
   Reserve
-  
+
   // Income types
   OperatingRevenue
   NonOperatingRevenue
   GainOnSale
-  
+
   // Expense types
   DirectExpense
   IndirectExpense
   OperatingExpense
-  
+
   // Unknown type
   UncategorizedType
 
@@ -314,102 +314,102 @@ enum AccountSubType {
   Inventory
   PrepaidExpenses
   MarketableSecurities
-  
+
   // Fixed Asset subtypes
   Land
   Building
   Equipment
   Vehicles
   Furniture
-  
+
   // Long Term Asset subtypes
   Investments
   Goodwill
   IntangibleAssets
   LongTermDeposits
   DeferredTaxAsset
-  
+
   // Current Liability subtypes
   AccountsPayable
   ShortTermLoans
   AccruedLiabilities
   UnearnedRevenue
   CurrentPortionOfLTD
-  
+
   // Long Term Liability subtypes
   LongTermDebt
   Bonds
   Mortgages
   PensionLiability
   DeferredTaxLiability
-  
+
   // Contingent Liability subtypes
   LegalClaims
   ProductWarranties
   GuaranteeObligations
   EnvironmentalLiability
-  
+
   // Capital subtypes
   CommonStock
   PreferredStock
   AdditionalPaidInCapital
   OwnerInvestment
   PartnerCapital
-  
+
   // Retained Profit subtypes
   RetainedEarnings
   AccumulatedProfits
   AccumulatedDeficit
   UndistributedProfit
-  
+
   // Reserve subtypes
   GeneralReserve
   CapitalReserve
   StatutoryReserve
   RevaluationReserve
   TreasuryStock
-  
+
   // Operating Revenue subtypes
   SalesRevenue
   ServiceRevenue
   CommissionRevenue
   FeeRevenue
   SubscriptionRevenue
-  
+
   // Non-Operating Revenue subtypes
   InterestIncome
   DividendIncome
   RentalIncome
   RoyaltyIncome
   LicensingRevenue
-  
+
   // Gain On Sale subtypes
   GainOnSaleOfAssets
   GainOnInvestments
   GainOnDebtSettlement
   GainOnForeignExchange
-  
+
   // Direct Expense subtypes
   CostOfGoodsSold
   DirectLabor
   DirectMaterials
   ManufacturingOverhead
   PurchasesDiscounts
-  
+
   // Indirect Expense subtypes
   Salaries
   Rent
   Utilities
   OfficeSupplies
   Insurance
-  
+
   // Operating Expense subtypes
   Marketing
   ResearchAndDevelopment
   Depreciation
   Amortization
   Interest
-  
+
   // Unknown subtype
   Uncategorized
 
@@ -579,7 +579,7 @@ model Dimension {
 model DimensionValue {
   id            String  @id @default(cuid())
   companyId     String  @map("company_id")
-  dimensionId   String
+  dimensionId   String  @map("dimension_id")
   dimensionName String  @map("dimension_name")
   value         String
   description   String?
@@ -630,6 +630,8 @@ model JournalLineDimension {
   journalLine    JournalLine    @relation(fields: [journalLineId], references: [id])
   dimension      Dimension      @relation(fields: [dimensionId], references: [id])
   dimensionValue DimensionValue @relation(fields: [dimensionValueId], references: [id])
+
+  @@map(name: "journal_line_dimensions")
 }
 
 model Task {
@@ -642,7 +644,7 @@ model Task {
   createdBy   String?    @map(name: "created_by")
   dueDate     DateTime   @map(name: "due_date") @db.Date
   frequency   Frequency?
-  status      TaskStatus  @default(planned)
+  status      TaskStatus @default(planned)
   resolution  String?
   assignedTo  String?    @map(name: "assigned_to")
   reviewerId  String?    @map(name: "reviewer")

@@ -129,6 +129,20 @@ async function handlePnpmInstall(clackWrapper: ClackWrapper, frozenLockfile: boo
   });
 }
 
+async function handleGenerateData(clackWrapper: ClackWrapper) {
+  await clackWrapper.doAsyncSpinner({
+    startMessage: "Generating fake data",
+    endMessage: "Successfully generated fake data",
+    errorMessage: "Unable to generate fake data",
+    command: "pnpm run generate-data",
+  });
+}
+
+async function generateFakeData(clackWrapper: ClackWrapper) {
+  await handleDbSanityCheck(clackWrapper);
+  await handleGenerateData(clackWrapper);
+}
+
 async function setupApiFromScratch(clackWrapper: ClackWrapper) {
   await handlePnpmInstall(clackWrapper, true);
   await handleFirstTimeDockerSetup(clackWrapper);
@@ -197,6 +211,25 @@ async function doCompleteRefresh(clackWrapper: ClackWrapper) {
   clackWrapper.exit("\u{1f389} Great success, enjoy the fresh start!");
 }
 
+async function doGenerateData(clackWrapper: ClackWrapper) {
+  await checkForReadyAndStart(
+    clackWrapper,
+    "This script will generate fake data in your database. Please stay around as various parts will require user input and/or confirmation.",
+  );
+
+  let dbEmpty = await clackWrapper.confirm({
+    message: "Is the database empty.",
+  });
+
+  if (!dbEmpty) {
+    clackWrapper.exit("Exiting without modifying data.");
+  }
+
+  await generateFakeData(clackWrapper);
+
+  clackWrapper.exit("\u{1f389} Great success, enjoy the new data!");
+}
+
 async function main() {
   const args = yargs(process.argv)
     .option("initialSetup", {
@@ -208,14 +241,20 @@ async function main() {
     .option("completeRefresh", {
       boolean: true,
     })
+    .option("generateData", {
+      boolean: true,
+    })
     .parseSync();
 
-  const { initialSetup, helpMe, completeRefresh } = args;
+  const { initialSetup, helpMe, completeRefresh, generateData } = args;
 
-  const moreThanOneOption =
-    Number(initialSetup || 0) + Number(helpMe || 0) + Number(completeRefresh || 0);
+  const numberOfOptions =
+    Number(initialSetup || 0) +
+    Number(helpMe || 0) +
+    Number(completeRefresh || 0) +
+    Number(generateData || 0);
 
-  if (moreThanOneOption > 1) {
+  if (numberOfOptions > 1) {
     throw new Error("Please choose only one option!");
   }
 
@@ -233,6 +272,10 @@ async function main() {
 
   if (completeRefresh) {
     return doCompleteRefresh(clackWrapper);
+  }
+
+  if (generateData) {
+    return doGenerateData(clackWrapper);
   }
 }
 

@@ -13,12 +13,12 @@ server.timeout = config.serverTimeoutMs;
 // Graceful shutdown function
 const shutdown = async () => {
   logger.info("Shutting down server...");
-  
+
   // Close HTTP server
   server.close(() => {
     logger.info("HTTP server closed");
   });
-  
+
   // Disconnect Prisma client
   try {
     await prisma.$disconnect();

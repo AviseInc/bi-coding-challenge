@@ -1,30 +1,46 @@
 /**
- * Database Seeding Script for Business Intelligence Application
+ * Data Generation Script for Business Intelligence Application
  *
- * This script generates fake data for the application database, creating a structured dataset
- * that can be used for development and testing purposes. It populates the database with
- * organizations, companies, users, accounts, periods, journal entries, and journal lines
- * following proper business relationships and constraints.
+ * This script generates a comprehensive set of realistic test data for the application database.
+ * It creates a complete accounting ecosystem with organizations, companies, users, accounts,
+ * financial periods, journal entries, and related business entities following proper accounting
+ * principles and data relationships.
  *
  * Key features:
- * - Creates organizations with companies, ensuring proper relationships
- * - Generates users with appropriate permissions (admins, regular users)
- * - Creates accounts with proper GAAP accounting hierarchy (classifications, types, subtypes)
- * - Maintains parent-child relationships in account structure
- * - Creates periods (months) for each company for years 2024 and 2025 (with possibility of additional years)
- * - Properly sets period status as closed for past periods and open for current/future periods
- * - Creates journal entries with appropriate status based on period dates
- * - Creates journal lines with balanced amounts (sum to zero) for journal entries
- * - Journal entries have displayId that increases with creation time (globally unique)
- * - Can output data as JSON instead of writing to the database (--json flag)
- * - Uses batch operations for efficient database writes
+ * - Creates organizations with hierarchical company structures
+ * - Generates users with appropriate permissions and statuses (admins, regular users)
+ * - Builds a chart of accounts following GAAP accounting principles:
+ *   - Proper account classifications (Asset, Liability, Equity, Income, Expense)
+ *   - Hierarchical account types and subtypes
+ *   - Parent-child account relationships
+ * - Creates fiscal periods based on company settings:
+ *   - Monthly or quarterly periods based on company's BasePeriod setting
+ *   - Automatically sets periods as closed for past, open for current/future
+ *   - Sets target close dates to the nearest business day 1 week before period end
+ * - Generates journal entries with chronologically increasing IDs
+ *   - Journal entries have appropriate statuses based on period dates
+ *   - Contains journal lines with balanced amounts (debits = credits)
+ * - Creates supplementary business data:
+ *   - Dimensions and dimension values for data categorization
+ *   - Vendors and customers derived from dimension values
+ *   - Tasks with appropriate assignments and statuses
+ * - Features flexible configuration options:
+ *   - JSON output mode for inspection without database writes
+ *   - Configurable data volume (organizations, companies, accounts, etc.)
+ *   - Customizable date ranges for fiscal periods
  *
  * Usage:
- *   pnpm exec ts-node scripts/makeFakeData.ts [options]
- *
+ *   pnpm generate-data [options]
+ *   
  * Options:
- *   --json      Output generated data as JSON instead of writing to the database
- *   --help      Show help information
+ *   --json         Output data as JSON instead of writing to database
+ *   --orgs         Number of organizations to create
+ *   --companies    Number of companies per organization
+ *   --users        Min and max users per company (format: "min,max")
+ *   --accounts     Min and max accounts per company (format: "min,max")
+ *   --entries      Min and max journal entries per period (format: "min,max")
+ *   --fiscalYears  Start and end years for periods (format: "startYear,endYear")
+ *   --help         Show help information
  *
  * @packageDocumentation
  */
@@ -35,21 +51,6 @@ import _ from "lodash";
 import { createId } from "@paralleldrive/cuid2";
 import yargs from "yargs";
 import logger from "../src/libraries/logger";
-
-// Create a wrapped version of prisma that only gets initialized when needed
-let prismaInstance: any = null;
-
-const prisma = new Proxy({} as any, {
-  get(target, prop) {
-    if (!prismaInstance) {
-      // Import and initialize prisma when first used
-      logger.info("Initializing Prisma client");
-      prismaInstance = require("../src/libraries/prisma").default;
-    }
-    return prismaInstance[prop];
-  },
-});
-
 import {
   Account,
   AccountClassification,
@@ -80,9 +81,24 @@ import {
   Vendor,
 } from "@prisma/client";
 
+// Create a wrapped version of prisma that only gets initialized when needed
+let prismaInstance: any = null;
+
+const prisma = new Proxy({} as any, {
+  get(target, prop) {
+    if (!prismaInstance) {
+      // Import and initialize prisma when first used
+      logger.info("Initializing Prisma client");
+      prismaInstance = require("../src/libraries/prisma").default;
+    }
+    return prismaInstance[prop];
+  },
+});
+
 /**
  * Script to generate fake data for the database
- * Run with: pnpm exec ts-node scripts/makeFakeData.ts
+ * Run with: pnpm exec ts-node scripts/generateData.ts
+ * Or use the package script: pnpm generate-data
  */
 
 // Configuration for the amount of fake data to generate
@@ -134,7 +150,7 @@ function createRandomOrganization(): Organization {
     updatedAt: now.toJSDate(),
   } as Organization;
 
-  logger.info(`Generated organization data: ${organization.fullName} (${organization.id})`);
+  logger.debug(`Generated organization data: ${organization.fullName} (${organization.id})`);
   return organization;
 }
 
@@ -142,7 +158,7 @@ function createRandomOrganization(): Organization {
  * Creates multiple organizations
  */
 async function createOrganizations(
-  count: number = NUM_ORGANIZATIONS,
+  count: number,
   jsonMode: boolean = false,
 ): Promise<Organization[]> {
   logger.info(`Creating ${count} organizations...`);
@@ -220,7 +236,7 @@ function createRandomCompany(organization: Organization): Company {
     organizationId: organization.id,
   } as Company;
 
-  logger.info(
+  logger.debug(
     `Generated company data: ${company.name} (${company.id}) for organization: ${organization.fullName}`,
   );
   return company;
@@ -231,7 +247,7 @@ function createRandomCompany(organization: Organization): Company {
  */
 async function createCompaniesForOrganization(
   organization: Organization,
-  count: number = NUM_COMPANIES_PER_ORG,
+  count: number,
 ): Promise<Company[]> {
   logger.info(`Creating ${count} companies for organization ${organization.fullName}...`);
 
@@ -250,6 +266,7 @@ async function createCompaniesForOrganization(
  */
 async function createCompanies(
   organizations: Organization[],
+  companiesPerOrg: number,
   jsonMode: boolean = false,
 ): Promise<Company[]> {
   logger.info(`Creating companies for ${organizations.length} organizations...`);
@@ -257,7 +274,7 @@ async function createCompanies(
   const allCompanies: Company[] = [];
 
   for (const organization of organizations) {
-    const companies = await createCompaniesForOrganization(organization);
+    const companies = await createCompaniesForOrganization(organization, companiesPerOrg);
     allCompanies.push(...companies);
   }
 
@@ -300,7 +317,7 @@ function createRandomUser(company: Company, isAdmin: boolean = false): User {
     updatedAt: now.toJSDate(),
   } as User;
 
-  logger.info(
+  logger.debug(
     `Generated user data: ${user.fullName} (${user.email}) for company: ${company.name} - Admin: ${user.isAdmin}, Status: ${user.status}`,
   );
   return user;
@@ -309,11 +326,15 @@ function createRandomUser(company: Company, isAdmin: boolean = false): User {
 /**
  * Creates multiple users for a company
  */
-async function createUsersForCompany(company: Company): Promise<User[]> {
+async function createUsersForCompany(
+  company: Company,
+  minUsers: number,
+  maxUsers: number,
+): Promise<User[]> {
   // Determine a random number of users between min and max
   const numUsers = faker.number.int({
-    min: MIN_USERS_PER_COMPANY,
-    max: MAX_USERS_PER_COMPANY,
+    min: minUsers,
+    max: maxUsers,
   });
 
   logger.info(`Creating ${numUsers} users for company ${company.name}...`);
@@ -338,13 +359,18 @@ async function createUsersForCompany(company: Company): Promise<User[]> {
 /**
  * Creates users for all companies
  */
-async function createUsers(companies: Company[], jsonMode: boolean = false): Promise<User[]> {
+async function createUsers(
+  companies: Company[],
+  minUsersPerCompany: number,
+  maxUsersPerCompany: number,
+  jsonMode: boolean = false,
+): Promise<User[]> {
   logger.info(`Creating users for ${companies.length} companies...`);
 
   const allUsers: User[] = [];
 
   for (const company of companies) {
-    const users = await createUsersForCompany(company);
+    const users = await createUsersForCompany(company, minUsersPerCompany, maxUsersPerCompany);
     allUsers.push(...users);
   }
 
@@ -622,7 +648,7 @@ function createRandomAccount(
   };
 
   const parentInfo = parentAccount ? ` (child of ${parentAccount.id})` : "";
-  logger.info(
+  logger.debug(
     `Generated account data: ${account.name} (${account.id})${parentInfo} - Classification: ${account.classification}, Type: ${account.accountType}, SubType: ${account.accountSubType}, Active: ${account.active}`,
   );
 
@@ -632,11 +658,15 @@ function createRandomAccount(
 /**
  * Creates accounts for a company, ensuring at least one account per classification
  */
-async function createAccountsForCompany(company: Company) {
+async function createAccountsForCompany(
+  company: Company,
+  minAccounts: number,
+  maxAccounts: number,
+) {
   // Determine number of accounts to create (between min and max)
   const numAccounts = faker.number.int({
-    min: MIN_ACCOUNTS_PER_COMPANY,
-    max: MAX_ACCOUNTS_PER_COMPANY,
+    min: minAccounts,
+    max: maxAccounts,
   });
 
   logger.info(`Creating ${numAccounts} accounts for company ${company.name}...`);
@@ -691,13 +721,22 @@ async function createAccountsForCompany(company: Company) {
 /**
  * Creates accounts for all companies
  */
-async function createAccounts(companies: Company[], jsonMode: boolean = false): Promise<Account[]> {
+async function createAccounts(
+  companies: Company[],
+  minAccountsPerCompany: number,
+  maxAccountsPerCompany: number,
+  jsonMode: boolean = false,
+): Promise<Account[]> {
   logger.info(`Creating accounts for ${companies.length} companies...`);
 
   const allAccounts: Account[] = [];
 
   for (const company of companies) {
-    const accounts = await createAccountsForCompany(company);
+    const accounts = await createAccountsForCompany(
+      company,
+      minAccountsPerCompany,
+      maxAccountsPerCompany,
+    );
     allAccounts.push(...accounts);
   }
 
@@ -718,61 +757,124 @@ async function createAccounts(companies: Company[], jsonMode: boolean = false): 
 }
 
 /**
- * Creates periods for a company
- * Generates periods for 2024 and 2025 (and optionally more years)
+ * Helper function to find the nearest business day on or before a given date
+ * Uses Luxon's isWeekend function to identify weekends
+ */
+function nearestPreviousBusinessDay(date: DateTime): DateTime {
+  let currentDate = date.startOf("day");
+  
+  // Check if the current date is already a business day (not a weekend)
+  if (!currentDate.isWeekend) {
+    return currentDate;
+  }
+  
+  // Keep going back one day at a time until we find a business day
+  while (currentDate.isWeekend) {
+    currentDate = currentDate.minus({ days: 1 });
+  }
+  
+  return currentDate;
+}
+
+/**
+ * Creates periods for a company based on its basePeriod setting (Month or Quarter)
+ * Generates periods for the specified fiscal years
  * - Past periods are closed
  * - Current and future periods are open
+ * - Target close date is set to the nearest business day one week before the end of the period
  */
-function createPeriodsForCompany(company: Company) {
-  logger.info(`Creating periods for company ${company.name}...`);
+function createPeriodsForCompany(company: Company, startYear: number, endYear: number) {
+  logger.info(`Creating periods for company ${company.name} from ${startYear} to ${endYear}...`);
 
   const periods = [];
   const now = DateTime.utc();
-  const currentMonth = now.month;
-  const currentYear = now.year;
 
-  // Generate periods for 2024 and 2025, plus potentially some additional years
-  const startYear = faker.datatype.boolean({ probability: 0.3 }) ? 2023 : 2024; // 30% chance to include 2023
-  const endYear = faker.datatype.boolean({ probability: 0.2 }) ? 2026 : 2025; // 20% chance to include 2026
-
+  // Determine interval based on company's basePeriod
+  const isMonthly = company.basePeriod === BasePeriod.Month;
+  
   for (let year = startYear; year <= endYear; year++) {
-    for (let month = 1; month <= 12; month++) {
-      // Create start and end dates for this period (month)
-      const startDate = DateTime.utc(year, month, 1).startOf("month");
-      const endDate = DateTime.utc(year, month, 1).endOf("month");
-      // Target close is the end of the month
-      const targetClose = endDate;
+    if (isMonthly) {
+      // Create monthly periods (12 per year)
+      for (let month = 1; month <= 12; month++) {
+        // Create start and end dates for this month
+        const startDate = DateTime.utc(year, month, 1).startOf("month");
+        const endDate = startDate.endOf("month");
+        
+        // Calculate target close date (one week before end of period)
+        const oneWeekBeforeEnd = endDate.minus({ days: 7 });
+        
+        // Find nearest business day on or before the one-week-before date
+        const targetCloseDate = nearestPreviousBusinessDay(oneWeekBeforeEnd);
 
-      // Determine if period should be closed or open (past periods are closed)
-      let status: PeriodStatus;
-      if (year < currentYear || (year === currentYear && month < currentMonth)) {
-        status = PeriodStatus.closed;
-      } else {
-        status = PeriodStatus.open;
+        // Determine if period should be closed or open (past periods are closed)
+        const status = endDate < now ? PeriodStatus.closed : PeriodStatus.open;
+
+        // Monthly display name (e.g., "Jan 2024")
+        const displayName = `${startDate.toFormat("MMM")} ${year}`;
+
+        // Convert Luxon DateTime to JavaScript Date objects that Prisma can handle
+        const period = {
+          id: createId(),
+          companyId: company.id,
+          displayName,
+          startsOn: startDate.startOf("day").toJSDate(),
+          endsOn: endDate.endOf("day").startOf("second").toJSDate(),
+          targetClose: targetCloseDate.endOf("day").startOf("second").toJSDate(),
+          status,
+          createdAt: now.toJSDate(),
+          updatedAt: now.toJSDate(),
+        };
+
+        periods.push(period);
+
+        logger.debug(
+          `Generated monthly period: ${period.displayName} (${period.id}) for company: ${company.name}, ` +
+          `Status: ${period.status}, Target Close: ${targetCloseDate.toFormat("yyyy-MM-dd")} (Business day)`,
+        );
       }
+    } else {
+      // Create quarterly periods (4 per year)
+      for (let quarter = 1; quarter <= 4; quarter++) {
+        // Calculate start and end months for this quarter
+        const startMonth = (quarter - 1) * 3 + 1; // 1, 4, 7, 10
+        const endMonth = startMonth + 2; // 3, 6, 9, 12
+        
+        // Create start and end dates for this quarter
+        const startDate = DateTime.utc(year, startMonth, 1).startOf("month");
+        const endDate = DateTime.utc(year, endMonth, 1).endOf("month");
+        
+        // Calculate target close date (one week before end of period)
+        const oneWeekBeforeEnd = endDate.minus({ days: 7 });
+        
+        // Find nearest business day on or before the one-week-before date
+        const targetCloseDate = nearestPreviousBusinessDay(oneWeekBeforeEnd);
 
-      // Create three-letter month + year display name (e.g., "Jan 2024")
-      const displayName = `${startDate.toFormat("MMM")} ${year}`;
+        // Determine if period should be closed or open (past periods are closed)
+        const status = endDate < now ? PeriodStatus.closed : PeriodStatus.open;
 
-      // Convert Luxon DateTime to JavaScript Date objects that Prisma can handle
-      const period = {
-        id: createId(), // Using cuid2 for ID
-        companyId: company.id,
-        displayName,
-        // Use Luxon to create proper Date objects for Prisma
-        startsOn: startDate.startOf("day").toJSDate(),
-        endsOn: endDate.endOf("day").startOf("second").toJSDate(), // Remove milliseconds
-        targetClose: targetClose.endOf("day").startOf("second").toJSDate(), // Remove milliseconds
-        status,
-        createdAt: now.toJSDate(),
-        updatedAt: now.toJSDate(),
-      };
+        // Quarterly display name (e.g., "Q1 2024")
+        const displayName = `Q${quarter} ${year}`;
 
-      periods.push(period);
+        // Convert Luxon DateTime to JavaScript Date objects that Prisma can handle
+        const period = {
+          id: createId(),
+          companyId: company.id,
+          displayName,
+          startsOn: startDate.startOf("day").toJSDate(),
+          endsOn: endDate.endOf("day").startOf("second").toJSDate(),
+          targetClose: targetCloseDate.endOf("day").startOf("second").toJSDate(),
+          status,
+          createdAt: now.toJSDate(),
+          updatedAt: now.toJSDate(),
+        };
 
-      logger.info(
-        `Generated period: ${period.displayName} (${period.id}) for company: ${company.name}, Status: ${period.status}`,
-      );
+        periods.push(period);
+
+        logger.debug(
+          `Generated quarterly period: ${period.displayName} (${period.id}) for company: ${company.name}, ` +
+          `Status: ${period.status}, Target Close: ${targetCloseDate.toFormat("yyyy-MM-dd")} (Business day)`,
+        );
+      }
     }
   }
 
@@ -782,13 +884,20 @@ function createPeriodsForCompany(company: Company) {
 /**
  * Creates periods for all companies
  */
-async function createPeriods(companies: Company[], jsonMode: boolean = false): Promise<Period[]> {
-  logger.info(`Creating periods for ${companies.length} companies...`);
+async function createPeriods(
+  companies: Company[],
+  startYear: number,
+  endYear: number,
+  jsonMode: boolean = false,
+): Promise<Period[]> {
+  logger.info(
+    `Creating periods for ${companies.length} companies from ${startYear} to ${endYear}...`,
+  );
 
   const allPeriods: Period[] = [];
 
   for (const company of companies) {
-    const periods = createPeriodsForCompany(company);
+    const periods = createPeriodsForCompany(company, startYear, endYear);
     allPeriods.push(...periods);
   }
 
@@ -841,7 +950,7 @@ function createDimensionsForCompany(company: Company): Dimension[] {
     };
 
     dimensions.push(dimension);
-    logger.info(
+    logger.debug(
       `Generated dimension data: ${dimension.name} (${dimension.id}) for company: ${company.name}, Source: ${dimension.source}`,
     );
   }
@@ -862,8 +971,14 @@ function createDimensionValuesForDimension(dimension: Dimension): DimensionValue
   logger.info(`Creating ${numValues} dimension values for dimension ${dimension.name}...`);
 
   const dimensionValues: DimensionValue[] = [];
+  const valuesSet = new Set<string>(); // Track unique values
 
-  for (let i = 0; i < numValues; i++) {
+  // Try to generate the requested number of unique values (but don't loop forever)
+  let attempts = 0;
+  const maxAttempts = numValues * 3; // Allow 3x attempts to find enough unique values
+  
+  while (valuesSet.size < numValues && attempts < maxAttempts) {
+    attempts++;
     let value: string;
 
     // Use specific faker functions based on dimension name
@@ -897,25 +1012,37 @@ function createDimensionValuesForDimension(dimension: Dimension): DimensionValue
         break;
 
       default:
-        value = `${dimension.name} Value ${i + 1}`;
+        value = `${dimension.name} Value ${valuesSet.size + 1}`;
     }
 
-    // Generate a description using faker
-    const description = faker.lorem.sentence();
+    // Only add if this value is unique for this dimension
+    if (!valuesSet.has(value)) {
+      valuesSet.add(value);
+      
+      // Generate a description using faker
+      const description = faker.lorem.sentence();
 
-    const dimensionValue: DimensionValue = {
-      id: createId(),
-      companyId: dimension.companyId,
-      dimensionId: dimension.id,
-      dimensionName: dimension.name,
-      value,
-      description,
-      active: true,
-    };
+      const dimensionValue: DimensionValue = {
+        id: createId(),
+        companyId: dimension.companyId,
+        dimensionId: dimension.id,
+        dimensionName: dimension.name,
+        value,
+        description,
+        active: true,
+      };
 
-    dimensionValues.push(dimensionValue);
-    logger.info(
-      `Generated dimension value: ${dimensionValue.value} (${dimensionValue.id}) for dimension: ${dimension.name}`,
+      dimensionValues.push(dimensionValue);
+      logger.debug(
+        `Generated dimension value: ${dimensionValue.value} (${dimensionValue.id}) for dimension: ${dimension.name}`,
+      );
+    }
+  }
+
+  // Log if we couldn't generate the requested number of unique values
+  if (dimensionValues.length < numValues) {
+    logger.warn(
+      `Only generated ${dimensionValues.length} unique values for dimension ${dimension.name} (requested ${numValues})`,
     );
   }
 
@@ -1020,7 +1147,7 @@ async function createVendorsFromDimensions(
     };
 
     vendors.push(vendor);
-    logger.info(
+    logger.debug(
       `Generated vendor: ${vendor.displayName} (${vendor.id}) for company: ${vendor.companyId}, Active: ${vendor.active}`,
     );
   }
@@ -1080,7 +1207,7 @@ async function createCustomersFromDimensions(
     };
 
     customers.push(customer);
-    logger.info(
+    logger.debug(
       `Generated customer: ${customer.displayName} (${customer.id}) for company: ${customer.companyId}, Active: ${customer.active}`,
     );
   }
@@ -1217,7 +1344,7 @@ function createRandomTasksForCompany(company: Company, users: User[]): Task[] {
     };
 
     tasks.push(task);
-    logger.info(
+    logger.debug(
       `Generated task: ${task.title} (${task.id}) for company: ${company.id}, Status: ${task.status}, Type: ${task.taskType}`,
     );
   }
@@ -1275,7 +1402,9 @@ function createRandomJournalLines(journalEntry: JournalEntry, accounts: Account[
 
   // Determine if we should check for active accounts only
   const now = DateTime.utc();
+
   const transactionDate = DateTime.fromJSDate(journalEntry.transactionDate);
+
   const requireActiveAccounts = transactionDate >= now;
 
   // Filter accounts for this company
@@ -1413,19 +1542,25 @@ function createRandomJournalEntry(
   // Transaction date must be within the period (inclusive)
   const minDate = DateTime.fromJSDate(period.startsOn);
   const maxDate = DateTime.fromJSDate(period.endsOn);
+
+  // Make sure maxDate isn't after current time to avoid the faker.date.between error
+  const now = DateTime.utc();
+
   const transactionDate = faker.date.between({
     from: minDate.toJSDate(),
     to: maxDate.toJSDate(),
   });
 
-  // Created at should be after transaction date (usually)
+  // Created at can be any time as JEs can be added for the past or the future but we'll limit it
+  // to be in the period we are working with
   const createdAt = faker.date.between({
-    from: transactionDate,
-    to: DateTime.utc().toJSDate(), // Can be created up to now
+    from: minDate.toJSDate(),
+    to: maxDate.toJSDate(),
   });
 
   // Randomly decide if journal entry has been updated
   const isUpdated = faker.datatype.boolean({ probability: 0.3 });
+
   let updatedBy: string | null = null;
   let updatedAt = createdAt;
 
@@ -1433,25 +1568,21 @@ function createRandomJournalEntry(
     // Pick another random user as updater (could be same as creator)
     updatedBy = faker.helpers.arrayElement(companyUsers).id;
 
-    // Updated at must be after created at
+    // Updated at must be after or on created at, but not after current time
     updatedAt = faker.date.between({
       from: createdAt,
-      to: DateTime.utc().toJSDate(),
+      to: maxDate.toJSDate(),
     });
   }
 
   // Randomly decide if journal entry is deleted
   const isDeleted = faker.datatype.boolean({ probability: 0.05 }); // 5% chance of being deleted
 
-  // Current date for status determination
-  const now = DateTime.utc();
-
   // Determine status based on period dates
   let status: JournalEntryStatus;
-  const periodStart = DateTime.fromJSDate(period.startsOn);
 
   // If period is in the future, status must be Scheduled
-  if (periodStart > now) {
+  if (minDate > now) {
     status = JournalEntryStatus.Scheduled;
   } else {
     // If current date is within period or period is in the past, status can be any value
@@ -1478,9 +1609,10 @@ function createRandomJournalEntry(
     description: faker.lorem.sentence(),
   };
 
-  logger.info(
+  logger.debug(
     `Generated journal entry: ID: ${journalEntry.id}, DisplayId: ${journalEntry.displayId}, Type: ${journalEntry.entryType}, Status: ${journalEntry.status}, Deleted: ${journalEntry.deleted}`,
   );
+
   return journalEntry;
 }
 
@@ -1538,7 +1670,7 @@ function createJournalLineDimensions(
 
         journalLineDimensions.push(journalLineDimension);
 
-        logger.info(
+        logger.debug(
           `Generated journal line dimension: ${journalLineDimension.name}=${journalLineDimension.value} ` +
             `for journal line ${journalLine.id}`,
         );
@@ -1558,6 +1690,8 @@ async function createJournalEntries(
   users: User[],
   accounts: Account[],
   dimensionValues: DimensionValue[],
+  minJournalEntriesPerPeriod: number,
+  maxJournalEntriesPerPeriod: number,
   jsonMode: boolean = false,
 ): Promise<{
   journalEntries: JournalEntry[];
@@ -1571,10 +1705,7 @@ async function createJournalEntries(
   let globalDisplayId = 1; // Start with 1 for display IDs
 
   // Sort all periods by start date to ensure displayId increases with time
-  const allPeriodsSorted = [...periods].sort(
-    (a, b) =>
-      DateTime.fromJSDate(a.startsOn).toMillis() - DateTime.fromJSDate(b.startsOn).toMillis(),
-  );
+  const allPeriodsSorted = [...periods].sort((a, b) => a.startsOn.getTime() - b.startsOn.getTime());
 
   // Go through all periods in chronological order
   for (const period of allPeriodsSorted) {
@@ -1582,8 +1713,8 @@ async function createJournalEntries(
 
     // Determine a random number of journal entries for this period
     const numEntries = faker.number.int({
-      min: MIN_JOURNAL_ENTRIES_PER_PERIOD,
-      max: MAX_JOURNAL_ENTRIES_PER_PERIOD,
+      min: minJournalEntriesPerPeriod,
+      max: maxJournalEntriesPerPeriod,
     });
 
     logger.info(
@@ -1656,6 +1787,9 @@ async function createJournalEntries(
  * Main function to execute data generation process
  */
 async function main(args = process.argv.slice(2)) {
+  // Get current year
+  const currentYear = DateTime.utc().year;
+
   // Parse command line arguments
   const argv = yargs(args)
     .option("json", {
@@ -1663,28 +1797,69 @@ async function main(args = process.argv.slice(2)) {
       description: "Output data as JSON instead of writing to database",
       default: false,
     })
+    .option("orgs", {
+      type: "number",
+      description: "Number of organizations to create",
+      default: NUM_ORGANIZATIONS,
+    })
+    .option("companies", {
+      type: "number",
+      description: "Number of companies per organization to create",
+      default: NUM_COMPANIES_PER_ORG,
+    })
+    .option("users", {
+      type: "string",
+      description: "Min and max users per company as 'min,max'",
+      default: `${MIN_USERS_PER_COMPANY},${MAX_USERS_PER_COMPANY}`,
+      coerce: (arg) => arg.split(",").map(Number),
+    })
+    .option("accounts", {
+      type: "string",
+      description: "Min and max accounts per company as 'min,max'",
+      default: `${MIN_ACCOUNTS_PER_COMPANY},${MAX_ACCOUNTS_PER_COMPANY}`,
+      coerce: (arg) => arg.split(",").map(Number),
+    })
+    .option("entries", {
+      type: "string",
+      description: "Min and max journal entries per period as 'min,max'",
+      default: `${MIN_JOURNAL_ENTRIES_PER_PERIOD},${MAX_JOURNAL_ENTRIES_PER_PERIOD}`,
+      coerce: (arg) => arg.split(",").map(Number),
+    })
+    .option("fiscalYears", {
+      type: "string",
+      description: "Start and end years for periods as 'startYear,endYear'",
+      default: `${currentYear - 1},${currentYear + 1}`,
+      coerce: (arg) => arg.split(",").map(Number),
+    })
     .help()
     .parseSync(); // Use parseSync() instead of .argv to avoid Promise
 
+  // Extract arguments
   const jsonMode = argv.json;
+  const numOrgs = argv.orgs;
+  const companiesPerOrg = argv.companies;
+  const [minUsers, maxUsers] = argv.users;
+  const [minAccounts, maxAccounts] = argv.accounts;
+  const [minEntries, maxEntries] = argv.entries;
+  const [startYear, endYear] = argv.fiscalYears;
 
   logger.info("Starting to generate fake data");
 
   try {
     // Generate organizations
-    const organizations: Organization[] = await createOrganizations(NUM_ORGANIZATIONS, jsonMode);
+    const organizations: Organization[] = await createOrganizations(numOrgs, jsonMode);
 
     // Generate companies for each organization
-    const companies: Company[] = await createCompanies(organizations, jsonMode);
+    const companies: Company[] = await createCompanies(organizations, companiesPerOrg, jsonMode);
 
     // Generate users for each company
-    const users: User[] = await createUsers(companies, jsonMode);
+    const users: User[] = await createUsers(companies, minUsers, maxUsers, jsonMode);
 
     // Generate accounts for each company
-    const accounts: Account[] = await createAccounts(companies, jsonMode);
+    const accounts: Account[] = await createAccounts(companies, minAccounts, maxAccounts, jsonMode);
 
     // Generate periods for each company
-    const periods: Period[] = await createPeriods(companies, jsonMode);
+    const periods: Period[] = await createPeriods(companies, startYear, endYear, jsonMode);
 
     // Generate dimensions for each company
     const dimensions: Dimension[] = await createDimensions(companies, jsonMode);
@@ -1708,6 +1883,8 @@ async function main(args = process.argv.slice(2)) {
       users,
       accounts,
       dimensionValues,
+      minEntries,
+      maxEntries,
       jsonMode,
     );
 
