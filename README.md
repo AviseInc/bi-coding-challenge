@@ -17,6 +17,7 @@ The tech stack you will use for the front end is:
 
 The tech stack we would like you to use for the back end is:
 
+* Docker
 * Node
 * Typescript
 * Express

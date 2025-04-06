@@ -4,10 +4,9 @@ import { Prisma, PrismaClient } from "@prisma/client";
 import logger from "./logger";
 import config from "../config";
 
-
 const loggingOptions = (
-  config.logDbQueries ? [ "query", "info", "warn", "error" ] : [ "error", "info", "warn" ]
-).map((level) => ({level: level, emit: "event"}));
+  config.logDbQueries ? ["query", "info", "warn", "error"] : ["error", "info", "warn"]
+).map((level) => ({ level: level, emit: "event" }));
 
 // Use the postgres config from the application config
 const { host, port, database, user, password } = config.postgres;
@@ -17,7 +16,7 @@ const pool = new Pool({
   port,
   database,
   user,
-  password
+  password,
 });
 
 const adapter = new PrismaPg(pool);

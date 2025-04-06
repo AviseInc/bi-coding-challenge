@@ -1,5 +1,13 @@
 # Setup
 
+## Start Docker Containers
+
+There is a compose config to startup a Postgres DB (schema: public, db: data) and a localstack instance
+
+```bash
+docker compose up -d
+```
+
 ## Install Packages
 
 ```bash
@@ -18,7 +26,7 @@ The recommend way to finish setup is by running the guided setup:
 pnpm run initial-setup
 ```
 
-Use this table for a quick guide to the most common commands and when you should run them.
+A quick guide to the most common commands and when you should run them:
 
 * `pnpm install` - Every time you `git pull`
 * `pnpm exec prisma generate` - Any time `schema/prisma.schema` changes (also when _you_ have changed it on your
@@ -70,32 +78,6 @@ To run all the checks (formating and linting) run:
 
 ```bash
 pnpm check
-```
-
-## Tests
-
-We write automated tests to check that API code is working as expected. Run the whole test suite:
-
-```
-pnpm run test
-```
-
-this runs ALL unit and ALL integration tests.
-
-Run unit tests separately:
-
-```
-pnpm run test:unit
-# You can additionally pass a `-f "some string"` and filter tests against that.
-pnpm run test:unit -f "some string"
-```
-
-Run integration tests separately:
-
-```
-pnpm run test:integration
-# You can additionally pass a `-f "some string"` and filter tests against that.
-pnpm run test:integration -f "some other string"
 ```
 
 ## Changing The Database Schema

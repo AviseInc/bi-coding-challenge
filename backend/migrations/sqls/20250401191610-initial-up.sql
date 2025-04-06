@@ -1,4 +1,31 @@
 -- Create Postgres enums first
+CREATE TYPE entry_type AS ENUM (
+  'JournalEntry',
+  'Bill',
+  'BillPayment',
+  'InventoryStartingValue',
+  'Invoice',
+  'CreditCardPayment',
+  'SalesTaxPayment',
+  'InventoryQtyAdjust',
+  'PurchaseOrder',
+  'BillableExpenseCharge',
+  'Charge',
+  'TimeCharge',
+  'Estimate',
+  'Deposit',
+  'SalesReceipt',
+  'Payment',
+  'Check',
+  'Expense',
+  'CashExpense',
+  'CreditCardExpense',
+  'CreditCardCredit',
+  'CreditMemo',
+  'Refund',
+  'Transfer',
+  'VendorCredit'
+);
 CREATE TYPE base_period AS ENUM ('Month', 'Quarter');
 
 CREATE TYPE platform AS ENUM ('QBO', 'Avise', 'CodatSandbox', 'Xero', 'OracleNetSuite');
@@ -164,7 +191,7 @@ CREATE TABLE journal_entries (
                                  id varchar PRIMARY KEY,
                                  display_id integer NOT NULL,
                                  company_id varchar REFERENCES companies (id) ON DELETE CASCADE,
-                                 entry_type varchar NOT NULL,
+                                 entry_type entry_type NOT NULL,
                                  period_id varchar REFERENCES periods (id) ON DELETE CASCADE,
                                  status journal_entry_status NOT NULL DEFAULT 'Posted',
                                  deleted boolean NOT NULL DEFAULT FALSE,

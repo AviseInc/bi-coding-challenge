@@ -44,7 +44,7 @@ export function validateEnvironment(): SafeProcessEnv {
   logger.debug("[Config] Validating environment variables.");
 
   // Running Locally
-  const result = mainValidator.validate(process.env, {stripUnknown: true, convert: true});
+  const result = mainValidator.validate(process.env, { stripUnknown: true, convert: true });
 
   if (result.error) {
     logger.warn(

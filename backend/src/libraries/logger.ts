@@ -1,4 +1,4 @@
-/* eslint-disable n/no-process-env */
+/* eslint-disable n/no-process-env, @typescript-eslint/restrict-template-expressions */
 // The logger is used in config loading, so it is allowed to access process.env to avoid a cyclical dependency
 import winston from "winston";
 import chalk from "chalk";
@@ -10,7 +10,6 @@ const colorWinstonWithChalk = winston.format.printf((params) => {
   const { level, message, ...rest } = params;
   const levelPadded = level.padStart(padAmount);
 
-  // eslint-disable-next-line functional/no-let
   let finalMessage = `${levelPadded}: ${message}`;
 
   // account for the ':' and the space after the label

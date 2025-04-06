@@ -471,6 +471,36 @@ model Period {
   @@map(name: "periods")
 }
 
+enum EntryType {
+  JournalEntry
+  Bill
+  BillPayment
+  InventoryStartingValue
+  Invoice
+  CreditCardPayment
+  SalesTaxPayment
+  InventoryQtyAdjust
+  PurchaseOrder
+  BillableExpenseCharge
+  Charge
+  TimeCharge
+  Estimate
+  Deposit
+  SalesReceipt
+  Payment
+  Check
+  Expense
+  CashExpense
+  CreditCardExpense
+  CreditCardCredit
+  CreditMemo
+  Refund
+  Transfer
+  VendorCredit
+
+  @@map(name: "entry_type")
+}
+
 enum JournalEntryStatus {
   Draft
   Scheduled
@@ -483,7 +513,7 @@ model JournalEntry {
   id              String             @id @default(cuid())
   displayId       Int                @map(name: "display_id")
   companyId       String             @map(name: "company_id")
-  entryType       String             @map(name: "entry_type")
+  entryType       EntryType          @map(name: "entry_type")
   transactionDate DateTime           @map(name: "transaction_date")
   createdBy       String             @map(name: "created_by")
   createdAt       DateTime           @default(dbgenerated("clock_timestamp()")) @map(name: "created_at")

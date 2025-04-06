@@ -1,10 +1,11 @@
 /**
  * Database Seeding Script for Business Intelligence Application
- * 
+ *
  * This script generates fake data for the application database, creating a structured dataset
- * that can be used for development and testing purposes. It populates the database with 
- * organizations, companies, users, accounts, and periods following proper business relationships and constraints.
- * 
+ * that can be used for development and testing purposes. It populates the database with
+ * organizations, companies, users, accounts, periods, journal entries, and journal lines
+ * following proper business relationships and constraints.
+ *
  * Key features:
  * - Creates organizations with companies, ensuring proper relationships
  * - Generates users with appropriate permissions (admins, regular users)
@@ -12,37 +13,72 @@
  * - Maintains parent-child relationships in account structure
  * - Creates periods (months) for each company for years 2024 and 2025 (with possibility of additional years)
  * - Properly sets period status as closed for past periods and open for current/future periods
+ * - Creates journal entries with appropriate status based on period dates
+ * - Creates journal lines with balanced amounts (sum to zero) for journal entries
+ * - Journal entries have displayId that increases with creation time (globally unique)
  * - Can output data as JSON instead of writing to the database (--json flag)
  * - Uses batch operations for efficient database writes
- * 
+ *
  * Usage:
  *   pnpm exec ts-node scripts/makeFakeData.ts [options]
- * 
+ *
  * Options:
  *   --json      Output generated data as JSON instead of writing to the database
  *   --help      Show help information
- * 
+ *
  * @packageDocumentation
  */
 
-import { faker } from '@faker-js/faker';
-import { DateTime } from 'luxon';
-import _ from 'lodash';
-import { createId } from '@paralleldrive/cuid2';
-import yargs from 'yargs';
-import prisma from '../src/libraries/prisma';
-import logger from '../src/libraries/logger';
-import { Organization, Company, BasePeriod, Platform, CurrencyCode, User, UserStatus, AccountClassification, AccountType, AccountSubType, PeriodStatus } from '@prisma/client';
+import { faker } from "@faker-js/faker";
+import { DateTime } from "luxon";
+import _ from "lodash";
+import { createId } from "@paralleldrive/cuid2";
+import yargs from "yargs";
+import logger from "../src/libraries/logger";
 
-// Parse command line arguments
-const argv = yargs(process.argv.slice(2))
-  .option('json', {
-    type: 'boolean',
-    description: 'Output data as JSON instead of writing to database',
-    default: false
-  })
-  .help()
-  .parseSync(); // Use parseSync() instead of .argv to avoid Promise
+// Create a wrapped version of prisma that only gets initialized when needed
+let prismaInstance: any = null;
+
+const prisma = new Proxy({} as any, {
+  get(target, prop) {
+    if (!prismaInstance) {
+      // Import and initialize prisma when first used
+      logger.info("Initializing Prisma client");
+      prismaInstance = require("../src/libraries/prisma").default;
+    }
+    return prismaInstance[prop];
+  },
+});
+
+import {
+  Account,
+  AccountClassification,
+  AccountSubType,
+  AccountType,
+  BasePeriod,
+  Company,
+  CurrencyCode,
+  Customer,
+  Dimension,
+  DimensionSource,
+  DimensionValue,
+  EntryType,
+  Frequency,
+  JournalEntry,
+  JournalEntryStatus,
+  JournalLine,
+  JournalLineDimension,
+  Organization,
+  Period,
+  PeriodStatus,
+  Platform,
+  Task,
+  TaskStatus,
+  TaskType,
+  User,
+  UserStatus,
+  Vendor,
+} from "@prisma/client";
 
 /**
  * Script to generate fake data for the database
@@ -54,23 +90,26 @@ const NUM_ORGANIZATIONS = 3;
 const NUM_COMPANIES_PER_ORG = 5;
 const MIN_USERS_PER_COMPANY = 1;
 const MAX_USERS_PER_COMPANY = 10;
-const MIN_ACCOUNTS_PER_COMPANY = 6;  // At least 6 accounts per company
+const MIN_ACCOUNTS_PER_COMPANY = 6; // At least 6 accounts per company
 const MAX_ACCOUNTS_PER_COMPANY = 24; // Maximum 24 accounts per company
+const MIN_JOURNAL_ENTRIES_PER_PERIOD = 20; // At least 20 journal entries per period
+const MAX_JOURNAL_ENTRIES_PER_PERIOD = 50; // Maximum 50 journal entries per period
+const MAX_JOURNAL_LINES_PER_ENTRY = 5; // Maximum 5 journal lines per entry
 
 /**
  * Generate an ID from a name
- * Removes special characters, converts to snake case
+ * Removes special characters, converts to kebab case
  * Used for both organization and company IDs
  */
 function generateIdFromName(name: string): string {
   // Trim whitespace, convert to lowercase
   const trimmed = _.trim(name).toLowerCase();
-  
+
   // Remove special characters, keeping only alphanumeric and spaces
-  const alphanumericOnly = trimmed.replace(/[^a-z0-9\s]/g, '');
-  
-  // Convert to snake case (replace spaces with underscores)
-  return _.snakeCase(alphanumericOnly);
+  const alphanumericOnly = trimmed.replace(/[^a-z0-9\s]/g, "");
+
+  // Convert to kebab case (replace spaces with hyphens)
+  return _.kebabCase(alphanumericOnly);
 }
 
 /**
@@ -80,13 +119,13 @@ function generateIdFromName(name: string): string {
 function createRandomOrganization(): Organization {
   // Generate organization name
   const fullName = faker.company.name();
-  
+
   // Generate ID from the full name
   const id = generateIdFromName(fullName);
-  
+
   // Use the current time in UTC for timestamps
   const now = DateTime.utc();
-  
+
   // Create organization data
   const organization = {
     id,
@@ -94,7 +133,7 @@ function createRandomOrganization(): Organization {
     createdAt: now.toJSDate(),
     updatedAt: now.toJSDate(),
   } as Organization;
-  
+
   logger.info(`Generated organization data: ${organization.fullName} (${organization.id})`);
   return organization;
 }
@@ -102,30 +141,33 @@ function createRandomOrganization(): Organization {
 /**
  * Creates multiple organizations
  */
-async function createOrganizations(count: number = NUM_ORGANIZATIONS): Promise<Organization[]> {
+async function createOrganizations(
+  count: number = NUM_ORGANIZATIONS,
+  jsonMode: boolean = false,
+): Promise<Organization[]> {
   logger.info(`Creating ${count} organizations...`);
-  
+
   const organizations: Organization[] = [];
-  
+
   // Generate data for all organizations
   for (let i = 0; i < count; i++) {
     // Use the createRandomOrganization function to generate data
     const organization = createRandomOrganization();
     organizations.push(organization);
   }
-  
+
   // In JSON mode, just return the generated data
-  if (argv.json) {
+  if (jsonMode) {
     logger.info(`Generated data for ${organizations.length} organizations`);
     return organizations;
   }
-  
+
   // In DB mode, use createMany to insert all organizations at once
   await prisma.organization.createMany({
     data: organizations,
     skipDuplicates: true,
   });
-  
+
   logger.info(`Created ${organizations.length} organizations`);
   return organizations;
 }
@@ -136,14 +178,15 @@ async function createOrganizations(count: number = NUM_ORGANIZATIONS): Promise<O
  */
 function randomEnum<T>(enumObject: T[] | Record<string, T>): T {
   let values: T[];
-  
+
   if (Array.isArray(enumObject)) {
     values = enumObject;
   } else {
     values = Object.values(enumObject);
   }
-  
+
   const randomIndex = Math.floor(Math.random() * values.length);
+
   return values[randomIndex];
 }
 
@@ -151,18 +194,16 @@ function randomEnum<T>(enumObject: T[] | Record<string, T>): T {
  * Creates a random company
  * Note: Does not write to database directly, data is batched in createCompanies function
  */
-function createRandomCompany(
-  organization: Organization
-): Company {
+function createRandomCompany(organization: Organization): Company {
   // Generate company name
   const name = faker.company.name();
-  
+
   // Generate ID from the company name (using same rules as org ID)
   const id = generateIdFromName(name);
-  
+
   // Use the current time in UTC for timestamps
   const now = DateTime.utc();
-  
+
   // Create company data
   const company = {
     id,
@@ -178,8 +219,10 @@ function createRandomCompany(
     homeCurrency: randomEnum(CurrencyCode),
     organizationId: organization.id,
   } as Company;
-  
-  logger.info(`Generated company data: ${company.name} (${company.id}) for organization: ${organization.fullName}`);
+
+  logger.info(
+    `Generated company data: ${company.name} (${company.id}) for organization: ${organization.fullName}`,
+  );
   return company;
 }
 
@@ -188,45 +231,48 @@ function createRandomCompany(
  */
 async function createCompaniesForOrganization(
   organization: Organization,
-  count: number = NUM_COMPANIES_PER_ORG
+  count: number = NUM_COMPANIES_PER_ORG,
 ): Promise<Company[]> {
   logger.info(`Creating ${count} companies for organization ${organization.fullName}...`);
-  
+
   const companies: Company[] = [];
-  
+
   for (let i = 0; i < count; i++) {
     const company = createRandomCompany(organization);
     companies.push(company);
   }
-  
+
   return companies;
 }
 
 /**
  * Creates companies for all organizations
  */
-async function createCompanies(organizations: Organization[]): Promise<Company[]> {
+async function createCompanies(
+  organizations: Organization[],
+  jsonMode: boolean = false,
+): Promise<Company[]> {
   logger.info(`Creating companies for ${organizations.length} organizations...`);
-  
+
   const allCompanies: Company[] = [];
-  
+
   for (const organization of organizations) {
     const companies = await createCompaniesForOrganization(organization);
     allCompanies.push(...companies);
   }
-  
+
   // In JSON mode, just return the generated data
-  if (argv.json) {
+  if (jsonMode) {
     logger.info(`Generated data for ${allCompanies.length} companies in total`);
     return allCompanies;
   }
-  
+
   // In DB mode, use createMany to insert all companies at once
   await prisma.company.createMany({
     data: allCompanies,
     skipDuplicates: true,
   });
-  
+
   logger.info(`Created ${allCompanies.length} companies in total`);
   return allCompanies;
 }
@@ -235,16 +281,13 @@ async function createCompanies(organizations: Organization[]): Promise<Company[]
  * Creates a random user
  * Note: Does not write to database directly, data is batched in createUsers function
  */
-function createRandomUser(
-  company: Company,
-  isAdmin: boolean = false
-): User {
+function createRandomUser(company: Company, isAdmin: boolean = false): User {
   // Use the current time in UTC for timestamps
   const now = DateTime.utc();
-  
+
   // If user is an admin, status must be Accepted
   const status = isAdmin ? UserStatus.Accepted : randomEnum(UserStatus);
-  
+
   // Create user data
   const user = {
     id: createId(),
@@ -256,8 +299,10 @@ function createRandomUser(
     createdAt: now.toJSDate(),
     updatedAt: now.toJSDate(),
   } as User;
-  
-  logger.info(`Generated user data: ${user.fullName} (${user.email}) for company: ${company.name} - Admin: ${user.isAdmin}, Status: ${user.status}`);
+
+  logger.info(
+    `Generated user data: ${user.fullName} (${user.email}) for company: ${company.name} - Admin: ${user.isAdmin}, Status: ${user.status}`,
+  );
   return user;
 }
 
@@ -266,19 +311,19 @@ function createRandomUser(
  */
 async function createUsersForCompany(company: Company): Promise<User[]> {
   // Determine a random number of users between min and max
-  const numUsers = faker.number.int({ 
-    min: MIN_USERS_PER_COMPANY, 
-    max: MAX_USERS_PER_COMPANY 
+  const numUsers = faker.number.int({
+    min: MIN_USERS_PER_COMPANY,
+    max: MAX_USERS_PER_COMPANY,
   });
-  
+
   logger.info(`Creating ${numUsers} users for company ${company.name}...`);
-  
+
   const users: User[] = [];
-  
+
   // Always create at least one admin user (first user)
   const adminUser = createRandomUser(company, true);
   users.push(adminUser);
-  
+
   // Create remaining regular users
   for (let i = 1; i < numUsers; i++) {
     // Randomly decide if this user is an admin (small chance)
@@ -286,35 +331,35 @@ async function createUsersForCompany(company: Company): Promise<User[]> {
     const user = createRandomUser(company, isAdmin);
     users.push(user);
   }
-  
+
   return users;
 }
 
 /**
  * Creates users for all companies
  */
-async function createUsers(companies: Company[]): Promise<User[]> {
+async function createUsers(companies: Company[], jsonMode: boolean = false): Promise<User[]> {
   logger.info(`Creating users for ${companies.length} companies...`);
-  
+
   const allUsers: User[] = [];
-  
+
   for (const company of companies) {
     const users = await createUsersForCompany(company);
     allUsers.push(...users);
   }
-  
+
   // In JSON mode, just return the generated data
-  if (argv.json) {
+  if (jsonMode) {
     logger.info(`Generated data for ${allUsers.length} users in total`);
     return allUsers;
   }
-  
+
   // In DB mode, use createMany to insert all users at once
   await prisma.user.createMany({
     data: allUsers,
     skipDuplicates: true,
   });
-  
+
   logger.info(`Created ${allUsers.length} users in total`);
   return allUsers;
 }
@@ -325,35 +370,23 @@ async function createUsers(companies: Company[]): Promise<User[]> {
 function getTypesForClassification(classification: AccountClassification): AccountType[] {
   switch (classification) {
     case AccountClassification.Asset:
-      return [
-        AccountType.CurrentAsset,
-        AccountType.FixedAsset,
-        AccountType.LongTermAsset
-      ];
+      return [AccountType.CurrentAsset, AccountType.FixedAsset, AccountType.LongTermAsset];
     case AccountClassification.Liability:
       return [
         AccountType.CurrentLiability,
         AccountType.LongTermLiability,
-        AccountType.ContingentLiability
+        AccountType.ContingentLiability,
       ];
     case AccountClassification.Equity:
-      return [
-        AccountType.Capital,
-        AccountType.RetainedProfit,
-        AccountType.Reserve
-      ];
+      return [AccountType.Capital, AccountType.RetainedProfit, AccountType.Reserve];
     case AccountClassification.Income:
       return [
         AccountType.OperatingRevenue,
         AccountType.NonOperatingRevenue,
-        AccountType.GainOnSale
+        AccountType.GainOnSale,
       ];
     case AccountClassification.Expense:
-      return [
-        AccountType.DirectExpense,
-        AccountType.IndirectExpense,
-        AccountType.OperatingExpense
-      ];
+      return [AccountType.DirectExpense, AccountType.IndirectExpense, AccountType.OperatingExpense];
     case AccountClassification.Unknown:
     default:
       return [AccountType.UncategorizedType];
@@ -372,7 +405,7 @@ function getSubtypesForType(accountType: AccountType): AccountSubType[] {
         AccountSubType.AccountsReceivable,
         AccountSubType.Inventory,
         AccountSubType.PrepaidExpenses,
-        AccountSubType.MarketableSecurities
+        AccountSubType.MarketableSecurities,
       ];
     case AccountType.FixedAsset:
       return [
@@ -380,7 +413,7 @@ function getSubtypesForType(accountType: AccountType): AccountSubType[] {
         AccountSubType.Building,
         AccountSubType.Equipment,
         AccountSubType.Vehicles,
-        AccountSubType.Furniture
+        AccountSubType.Furniture,
       ];
     case AccountType.LongTermAsset:
       return [
@@ -388,9 +421,9 @@ function getSubtypesForType(accountType: AccountType): AccountSubType[] {
         AccountSubType.Goodwill,
         AccountSubType.IntangibleAssets,
         AccountSubType.LongTermDeposits,
-        AccountSubType.DeferredTaxAsset
+        AccountSubType.DeferredTaxAsset,
       ];
-      
+
     // Liability Types
     case AccountType.CurrentLiability:
       return [
@@ -398,7 +431,7 @@ function getSubtypesForType(accountType: AccountType): AccountSubType[] {
         AccountSubType.ShortTermLoans,
         AccountSubType.AccruedLiabilities,
         AccountSubType.UnearnedRevenue,
-        AccountSubType.CurrentPortionOfLTD
+        AccountSubType.CurrentPortionOfLTD,
       ];
     case AccountType.LongTermLiability:
       return [
@@ -406,16 +439,16 @@ function getSubtypesForType(accountType: AccountType): AccountSubType[] {
         AccountSubType.Bonds,
         AccountSubType.Mortgages,
         AccountSubType.PensionLiability,
-        AccountSubType.DeferredTaxLiability
+        AccountSubType.DeferredTaxLiability,
       ];
     case AccountType.ContingentLiability:
       return [
         AccountSubType.LegalClaims,
         AccountSubType.ProductWarranties,
         AccountSubType.GuaranteeObligations,
-        AccountSubType.EnvironmentalLiability
+        AccountSubType.EnvironmentalLiability,
       ];
-      
+
     // Equity Types
     case AccountType.Capital:
       return [
@@ -423,14 +456,14 @@ function getSubtypesForType(accountType: AccountType): AccountSubType[] {
         AccountSubType.PreferredStock,
         AccountSubType.AdditionalPaidInCapital,
         AccountSubType.OwnerInvestment,
-        AccountSubType.PartnerCapital
+        AccountSubType.PartnerCapital,
       ];
     case AccountType.RetainedProfit:
       return [
         AccountSubType.RetainedEarnings,
         AccountSubType.AccumulatedProfits,
         AccountSubType.AccumulatedDeficit,
-        AccountSubType.UndistributedProfit
+        AccountSubType.UndistributedProfit,
       ];
     case AccountType.Reserve:
       return [
@@ -438,9 +471,9 @@ function getSubtypesForType(accountType: AccountType): AccountSubType[] {
         AccountSubType.CapitalReserve,
         AccountSubType.StatutoryReserve,
         AccountSubType.RevaluationReserve,
-        AccountSubType.TreasuryStock
+        AccountSubType.TreasuryStock,
       ];
-      
+
     // Income Types
     case AccountType.OperatingRevenue:
       return [
@@ -448,7 +481,7 @@ function getSubtypesForType(accountType: AccountType): AccountSubType[] {
         AccountSubType.ServiceRevenue,
         AccountSubType.CommissionRevenue,
         AccountSubType.FeeRevenue,
-        AccountSubType.SubscriptionRevenue
+        AccountSubType.SubscriptionRevenue,
       ];
     case AccountType.NonOperatingRevenue:
       return [
@@ -456,16 +489,16 @@ function getSubtypesForType(accountType: AccountType): AccountSubType[] {
         AccountSubType.DividendIncome,
         AccountSubType.RentalIncome,
         AccountSubType.RoyaltyIncome,
-        AccountSubType.LicensingRevenue
+        AccountSubType.LicensingRevenue,
       ];
     case AccountType.GainOnSale:
       return [
         AccountSubType.GainOnSaleOfAssets,
         AccountSubType.GainOnInvestments,
         AccountSubType.GainOnDebtSettlement,
-        AccountSubType.GainOnForeignExchange
+        AccountSubType.GainOnForeignExchange,
       ];
-      
+
     // Expense Types
     case AccountType.DirectExpense:
       return [
@@ -473,7 +506,7 @@ function getSubtypesForType(accountType: AccountType): AccountSubType[] {
         AccountSubType.DirectLabor,
         AccountSubType.DirectMaterials,
         AccountSubType.ManufacturingOverhead,
-        AccountSubType.PurchasesDiscounts
+        AccountSubType.PurchasesDiscounts,
       ];
     case AccountType.IndirectExpense:
       return [
@@ -481,7 +514,7 @@ function getSubtypesForType(accountType: AccountType): AccountSubType[] {
         AccountSubType.Rent,
         AccountSubType.Utilities,
         AccountSubType.OfficeSupplies,
-        AccountSubType.Insurance
+        AccountSubType.Insurance,
       ];
     case AccountType.OperatingExpense:
       return [
@@ -489,9 +522,9 @@ function getSubtypesForType(accountType: AccountType): AccountSubType[] {
         AccountSubType.ResearchAndDevelopment,
         AccountSubType.Depreciation,
         AccountSubType.Amortization,
-        AccountSubType.Interest
+        AccountSubType.Interest,
       ];
-      
+
     // Unknown
     case AccountType.UncategorizedType:
     default:
@@ -506,12 +539,19 @@ function getSubtypesForType(accountType: AccountType): AccountSubType[] {
 function createRandomAccount(
   company: Company,
   classification: AccountClassification,
-  parentAccount: { id: string, active: boolean, name: string, classification: AccountClassification, accountType: AccountType, accountSubType: AccountSubType } | null = null
+  parentAccount: {
+    id: string;
+    active: boolean;
+    name: string;
+    classification: AccountClassification;
+    accountType: AccountType;
+    accountSubType: AccountSubType;
+  } | null = null,
 ) {
   // If this is a child account, use the same classification, type, and subtype as the parent
   let accountType: AccountType;
   let accountSubType: AccountSubType;
-  
+
   if (parentAccount) {
     // Child accounts must match parent's classification, type, and subtype
     accountType = parentAccount.accountType;
@@ -520,18 +560,18 @@ function createRandomAccount(
     // For new parent accounts, randomly select type and subtype from valid options
     const types = getTypesForClassification(classification);
     accountType = randomEnum(types);
-    
+
     const subtypes = getSubtypesForType(accountType);
     accountSubType = randomEnum(subtypes);
   }
-  
+
   // Generate fully qualified name
-  let fullyQualifiedName = '';
-  
+  let fullyQualifiedName = "";
+
   if (parentAccount) {
-    // For child accounts, use the first word from parent name 
+    // For child accounts, use the first word from parent name
     // then add a second random word, classification, type and subtype
-    const parentFirstWord = parentAccount.name.split(' ')[0];
+    const parentFirstWord = parentAccount.name.split(" ")[0];
     const secondWord = faker.lorem.word({ length: { min: 5, max: 10 } });
     fullyQualifiedName = `${parentFirstWord} ${secondWord} ${classification}-${accountType}-${accountSubType}`;
   } else {
@@ -539,7 +579,7 @@ function createRandomAccount(
     const firstWord = faker.lorem.word({ length: { min: 10, max: 15 } });
     fullyQualifiedName = `${firstWord} ${classification}-${accountType}-${accountSubType}`;
   }
-  
+
   // Sometimes shorten the name, sometimes use the full name
   let accountName = fullyQualifiedName;
   if (faker.datatype.boolean({ probability: 0.6 })) {
@@ -547,7 +587,7 @@ function createRandomAccount(
     const shortenBy = faker.number.int({ min: 3, max: 10 });
     accountName = fullyQualifiedName.substring(0, fullyQualifiedName.length - shortenBy);
   }
-  
+
   // Generate active status - if parent exists and is not active, child must also be inactive
   let active = true;
   if (parentAccount && !parentAccount.active) {
@@ -555,14 +595,16 @@ function createRandomAccount(
   } else {
     active = faker.datatype.boolean({ probability: 0.9 }); // 90% chance of being active
   }
-  
+
   // Special use type only applicable for Expense accounts
-  const specialUseType = classification === AccountClassification.Expense && 
-    faker.datatype.boolean({ probability: 0.2 }) ? 'AccruedExpense' as const : null;
-  
+  const specialUseType =
+    classification === AccountClassification.Expense && faker.datatype.boolean({ probability: 0.2 })
+      ? ("AccruedExpense" as const)
+      : null;
+
   // Use the current time in UTC for timestamps
   const now = DateTime.utc();
-  
+
   // Create account data
   const account = {
     id: createId(),
@@ -576,12 +618,14 @@ function createRandomAccount(
     classification: classification,
     accountType: accountType,
     accountSubType: accountSubType,
-    specialUseType: specialUseType
+    specialUseType: specialUseType,
   };
-  
-  const parentInfo = parentAccount ? ` (child of ${parentAccount.id})` : '';
-  logger.info(`Generated account data: ${account.name} (${account.id})${parentInfo} - Classification: ${account.classification}, Type: ${account.accountType}, SubType: ${account.accountSubType}, Active: ${account.active}`);
-  
+
+  const parentInfo = parentAccount ? ` (child of ${parentAccount.id})` : "";
+  logger.info(
+    `Generated account data: ${account.name} (${account.id})${parentInfo} - Classification: ${account.classification}, Type: ${account.accountType}, SubType: ${account.accountSubType}, Active: ${account.active}`,
+  );
+
   return account;
 }
 
@@ -592,58 +636,54 @@ async function createAccountsForCompany(company: Company) {
   // Determine number of accounts to create (between min and max)
   const numAccounts = faker.number.int({
     min: MIN_ACCOUNTS_PER_COMPANY,
-    max: MAX_ACCOUNTS_PER_COMPANY
+    max: MAX_ACCOUNTS_PER_COMPANY,
   });
-  
+
   logger.info(`Creating ${numAccounts} accounts for company ${company.name}...`);
-  
+
   const accounts = [];
   const parentAccounts = []; // Track potential parent accounts
-  
+
   // First create at least one account for each classification
   for (const classification of Object.values(AccountClassification)) {
     const account = createRandomAccount(company, classification);
     accounts.push(account);
     parentAccounts.push(account);
   }
-  
+
   // Create remaining accounts with random classifications
   for (let i = accounts.length; i < numAccounts; i++) {
     const classification = randomEnum(AccountClassification);
-    
+
     // Randomly decide if this should be a child account (30% chance if we have parent accounts)
-    const createChildAccount = parentAccounts.length > 0 && 
-      faker.datatype.boolean({ probability: 0.3 });
-    
+    const createChildAccount =
+      parentAccounts.length > 0 && faker.datatype.boolean({ probability: 0.3 });
+
     if (createChildAccount) {
       // Find a potential parent with the same classification
       const potentialParents = parentAccounts.filter(
-        parent => parent.classification === classification
+        (parent) => parent.classification === classification,
       );
-      
+
       if (potentialParents.length > 0) {
         // Randomly select a parent
         const parentAccount = faker.helpers.arrayElement(potentialParents);
-        
+
         // Create a child account with the same classification as the parent
-        const childAccount = createRandomAccount(
-          company,
-          classification,
-          parentAccount
-        );
-        
+        const childAccount = createRandomAccount(company, classification, parentAccount);
+
         accounts.push(childAccount);
         // Don't add child accounts to potential parents list
         continue;
       }
     }
-    
+
     // Create a regular account
     const account = createRandomAccount(company, classification);
     accounts.push(account);
     parentAccounts.push(account);
   }
-  
+
   logger.info(`Created ${accounts.length} accounts for company ${company.name}`);
   return accounts;
 }
@@ -651,28 +691,28 @@ async function createAccountsForCompany(company: Company) {
 /**
  * Creates accounts for all companies
  */
-async function createAccounts(companies: Company[]) {
+async function createAccounts(companies: Company[], jsonMode: boolean = false): Promise<Account[]> {
   logger.info(`Creating accounts for ${companies.length} companies...`);
-  
-  const allAccounts = [];
-  
+
+  const allAccounts: Account[] = [];
+
   for (const company of companies) {
     const accounts = await createAccountsForCompany(company);
     allAccounts.push(...accounts);
   }
-  
+
   // In JSON mode, just return the generated data
-  if (argv.json) {
+  if (jsonMode) {
     logger.info(`Generated data for ${allAccounts.length} accounts in total`);
     return allAccounts;
   }
-  
+
   // In DB mode, use createMany to insert all accounts at once
   await prisma.account.createMany({
     data: allAccounts,
     skipDuplicates: true,
   });
-  
+
   logger.info(`Created ${allAccounts.length} accounts in total`);
   return allAccounts;
 }
@@ -685,24 +725,24 @@ async function createAccounts(companies: Company[]) {
  */
 function createPeriodsForCompany(company: Company) {
   logger.info(`Creating periods for company ${company.name}...`);
-  
+
   const periods = [];
   const now = DateTime.utc();
   const currentMonth = now.month;
   const currentYear = now.year;
-  
+
   // Generate periods for 2024 and 2025, plus potentially some additional years
   const startYear = faker.datatype.boolean({ probability: 0.3 }) ? 2023 : 2024; // 30% chance to include 2023
-  const endYear = faker.datatype.boolean({ probability: 0.2 }) ? 2026 : 2025;   // 20% chance to include 2026
-  
+  const endYear = faker.datatype.boolean({ probability: 0.2 }) ? 2026 : 2025; // 20% chance to include 2026
+
   for (let year = startYear; year <= endYear; year++) {
     for (let month = 1; month <= 12; month++) {
       // Create start and end dates for this period (month)
-      const startDate = DateTime.utc(year, month, 1).startOf('month');
-      const endDate = DateTime.utc(year, month, 1).endOf('month');
+      const startDate = DateTime.utc(year, month, 1).startOf("month");
+      const endDate = DateTime.utc(year, month, 1).endOf("month");
       // Target close is the end of the month
       const targetClose = endDate;
-      
+
       // Determine if period should be closed or open (past periods are closed)
       let status: PeriodStatus;
       if (year < currentYear || (year === currentYear && month < currentMonth)) {
@@ -710,114 +750,1037 @@ function createPeriodsForCompany(company: Company) {
       } else {
         status = PeriodStatus.open;
       }
-      
+
       // Create three-letter month + year display name (e.g., "Jan 2024")
-      const displayName = `${startDate.toFormat('MMM')} ${year}`;
-      
+      const displayName = `${startDate.toFormat("MMM")} ${year}`;
+
       // Convert Luxon DateTime to JavaScript Date objects that Prisma can handle
       const period = {
         id: createId(), // Using cuid2 for ID
         companyId: company.id,
         displayName,
         // Use Luxon to create proper Date objects for Prisma
-        startsOn: startDate.startOf('day').toJSDate(),
-        endsOn: endDate.endOf('day').startOf('second').toJSDate(), // Remove milliseconds
-        targetClose: targetClose.endOf('day').startOf('second').toJSDate(), // Remove milliseconds
+        startsOn: startDate.startOf("day").toJSDate(),
+        endsOn: endDate.endOf("day").startOf("second").toJSDate(), // Remove milliseconds
+        targetClose: targetClose.endOf("day").startOf("second").toJSDate(), // Remove milliseconds
         status,
         createdAt: now.toJSDate(),
-        updatedAt: now.toJSDate()
+        updatedAt: now.toJSDate(),
       };
-      
+
       periods.push(period);
-      
-      logger.info(`Generated period: ${period.displayName} (${period.id}) for company: ${company.name}, Status: ${period.status}`);
+
+      logger.info(
+        `Generated period: ${period.displayName} (${period.id}) for company: ${company.name}, Status: ${period.status}`,
+      );
     }
   }
-  
+
   return periods;
 }
 
 /**
  * Creates periods for all companies
  */
-async function createPeriods(companies: Company[]) {
+async function createPeriods(companies: Company[], jsonMode: boolean = false): Promise<Period[]> {
   logger.info(`Creating periods for ${companies.length} companies...`);
-  
-  const allPeriods = [];
-  
+
+  const allPeriods: Period[] = [];
+
   for (const company of companies) {
     const periods = createPeriodsForCompany(company);
     allPeriods.push(...periods);
   }
-  
+
   // In JSON mode, just return the generated data
-  if (argv.json) {
+  if (jsonMode) {
     logger.info(`Generated data for ${allPeriods.length} periods in total`);
     return allPeriods;
   }
-  
+
   // In DB mode, use createMany to insert all periods at once
   await prisma.period.createMany({
     data: allPeriods,
     skipDuplicates: true,
   });
-  
+
   logger.info(`Created ${allPeriods.length} periods in total`);
   return allPeriods;
 }
 
-async function main() {
-  logger.info('Starting to generate fake data');
+/**
+ * Creates standard dimensions for a company
+ */
+function createDimensionsForCompany(company: Company): Dimension[] {
+  logger.info(`Creating standard dimensions for company ${company.name}...`);
+
+  // Define standard dimension names
+  const standardDimensions = [
+    "Company",
+    "Customer",
+    "Vendor",
+    "Department",
+    "Location",
+    "Product",
+    "Person",
+  ];
+
+  const dimensions: Dimension[] = [];
+
+  // Create a dimension for each standard name
+  for (const dimensionName of standardDimensions) {
+    // Pick a random source
+    const source = randomEnum(DimensionSource);
+
+    const dimension: Dimension = {
+      id: createId(),
+      companyId: company.id,
+      name: dimensionName,
+      active: true,
+      source,
+    };
+
+    dimensions.push(dimension);
+    logger.info(
+      `Generated dimension data: ${dimension.name} (${dimension.id}) for company: ${company.name}, Source: ${dimension.source}`,
+    );
+  }
+
+  return dimensions;
+}
+
+/**
+ * Creates random dimension values for a dimension
+ */
+function createDimensionValuesForDimension(dimension: Dimension): DimensionValue[] {
+  // Determine how many dimension values to create (5-10)
+  const numValues = faker.number.int({
+    min: 5,
+    max: 10,
+  });
+
+  logger.info(`Creating ${numValues} dimension values for dimension ${dimension.name}...`);
+
+  const dimensionValues: DimensionValue[] = [];
+
+  for (let i = 0; i < numValues; i++) {
+    let value: string;
+
+    // Use specific faker functions based on dimension name
+    switch (dimension.name) {
+      case "Company":
+        value = faker.company.name();
+        break;
+
+      case "Customer":
+        value = faker.company.name();
+        break;
+
+      case "Vendor":
+        value = faker.company.name();
+        break;
+
+      case "Department":
+        value = faker.commerce.department();
+        break;
+
+      case "Location":
+        value = `${faker.location.city()}, ${faker.location.state()}`;
+        break;
+
+      case "Product":
+        value = faker.commerce.product();
+        break;
+
+      case "Person":
+        value = faker.person.fullName();
+        break;
+
+      default:
+        value = `${dimension.name} Value ${i + 1}`;
+    }
+
+    // Generate a description using faker
+    const description = faker.lorem.sentence();
+
+    const dimensionValue: DimensionValue = {
+      id: createId(),
+      companyId: dimension.companyId,
+      dimensionId: dimension.id,
+      dimensionName: dimension.name,
+      value,
+      description,
+      active: true,
+    };
+
+    dimensionValues.push(dimensionValue);
+    logger.info(
+      `Generated dimension value: ${dimensionValue.value} (${dimensionValue.id}) for dimension: ${dimension.name}`,
+    );
+  }
+
+  return dimensionValues;
+}
+
+/**
+ * Creates dimensions for all companies
+ */
+async function createDimensions(
+  companies: Company[],
+  jsonMode: boolean = false,
+): Promise<Dimension[]> {
+  logger.info(`Creating dimensions for ${companies.length} companies...`);
+
+  const allDimensions: Dimension[] = [];
+
+  for (const company of companies) {
+    const dimensions = createDimensionsForCompany(company);
+    allDimensions.push(...dimensions);
+  }
+
+  // In JSON mode, just return the generated data
+  if (jsonMode) {
+    logger.info(`Generated data for ${allDimensions.length} dimensions in total`);
+    return allDimensions;
+  }
+
+  // In DB mode, use createMany to insert all dimensions at once
+  await prisma.dimension.createMany({
+    data: allDimensions,
+    skipDuplicates: true,
+  });
+
+  logger.info(`Created ${allDimensions.length} dimensions in total`);
+  return allDimensions;
+}
+
+/**
+ * Creates dimension values for all dimensions
+ */
+async function createDimensionValues(
+  dimensions: Dimension[],
+  jsonMode: boolean = false,
+): Promise<DimensionValue[]> {
+  logger.info(`Creating dimension values for ${dimensions.length} dimensions...`);
+
+  const allDimensionValues: DimensionValue[] = [];
+
+  for (const dimension of dimensions) {
+    const dimensionValues = createDimensionValuesForDimension(dimension);
+    allDimensionValues.push(...dimensionValues);
+  }
+
+  // In JSON mode, just return the generated data
+  if (jsonMode) {
+    logger.info(`Generated data for ${allDimensionValues.length} dimension values in total`);
+    return allDimensionValues;
+  }
+
+  // In DB mode, use createMany to insert all dimension values at once
+  await prisma.dimensionValue.createMany({
+    data: allDimensionValues,
+    skipDuplicates: true,
+  });
+
+  logger.info(`Created ${allDimensionValues.length} dimension values in total`);
+  return allDimensionValues;
+}
+
+/**
+ * Creates vendors for each Vendor dimension value
+ */
+async function createVendorsFromDimensions(
+  dimensionValues: DimensionValue[],
+  jsonMode: boolean = false,
+): Promise<Vendor[]> {
+  logger.info(`Creating vendors from Vendor dimension values...`);
+
+  // Filter for just Vendor dimension values
+  const vendorDimensionValues = dimensionValues.filter(
+    (dimValue) => dimValue.dimensionName === "Vendor",
+  );
+
+  logger.info(
+    `Found ${vendorDimensionValues.length} Vendor dimension values to create vendors for`,
+  );
+
+  const vendors: Vendor[] = [];
+
+  // Create a vendor for each Vendor dimension value
+  for (const vendorDimValue of vendorDimensionValues) {
+    const now = DateTime.utc();
+
+    const vendor: Vendor = {
+      id: createId(),
+      companyId: vendorDimValue.companyId,
+      displayName: vendorDimValue.value,
+      active: vendorDimValue.active, // Match the active status from the dimension value
+      createdAt: now.toJSDate(),
+      updatedAt: now.toJSDate(),
+    };
+
+    vendors.push(vendor);
+    logger.info(
+      `Generated vendor: ${vendor.displayName} (${vendor.id}) for company: ${vendor.companyId}, Active: ${vendor.active}`,
+    );
+  }
+
+  // In JSON mode, just return the generated data
+  if (jsonMode) {
+    logger.info(`Generated data for ${vendors.length} vendors in total`);
+    return vendors;
+  }
+
+  // In DB mode, use createMany to insert all vendors at once
+  if (vendors.length > 0) {
+    await prisma.vendor.createMany({
+      data: vendors,
+      skipDuplicates: true,
+    });
+
+    logger.info(`Created ${vendors.length} vendors in total`);
+  } else {
+    logger.info("No vendors created: no Vendor dimension values found");
+  }
+
+  return vendors;
+}
+
+/**
+ * Creates customers for each Customer dimension value
+ */
+async function createCustomersFromDimensions(
+  dimensionValues: DimensionValue[],
+  jsonMode: boolean = false,
+): Promise<Customer[]> {
+  logger.info(`Creating customers from Customer dimension values...`);
+
+  // Filter for just Customer dimension values
+  const customerDimensionValues = dimensionValues.filter(
+    (dimValue) => dimValue.dimensionName === "Customer",
+  );
+
+  logger.info(
+    `Found ${customerDimensionValues.length} Customer dimension values to create customers for`,
+  );
+
+  const customers: Customer[] = [];
+
+  // Create a customer for each Customer dimension value
+  for (const customerDimValue of customerDimensionValues) {
+    const now = DateTime.utc();
+
+    const customer: Customer = {
+      id: createId(),
+      companyId: customerDimValue.companyId,
+      displayName: customerDimValue.value,
+      active: customerDimValue.active, // Match the active status from the dimension value
+      createdAt: now.toJSDate(),
+      updatedAt: now.toJSDate(),
+    };
+
+    customers.push(customer);
+    logger.info(
+      `Generated customer: ${customer.displayName} (${customer.id}) for company: ${customer.companyId}, Active: ${customer.active}`,
+    );
+  }
+
+  // In JSON mode, just return the generated data
+  if (jsonMode) {
+    logger.info(`Generated data for ${customers.length} customers in total`);
+    return customers;
+  }
+
+  // In DB mode, use createMany to insert all customers at once
+  if (customers.length > 0) {
+    await prisma.customer.createMany({
+      data: customers,
+      skipDuplicates: true,
+    });
+
+    logger.info(`Created ${customers.length} customers in total`);
+  } else {
+    logger.info("No customers created: no Customer dimension values found");
+  }
+
+  return customers;
+}
+
+/**
+ * Creates random tasks for a company
+ */
+function createRandomTasksForCompany(company: Company, users: User[]): Task[] {
+  // Filter users for this company
+  const companyUsers = users.filter((user) => user.companyId === company.id);
+
+  // Determine number of tasks to create (10-100)
+  const numTasks = faker.number.int({
+    min: 10,
+    max: 100,
+  });
+
+  logger.info(`Creating ${numTasks} tasks for company ${company.name}...`);
+
+  const tasks: Task[] = [];
+
+  for (let i = 0; i < numTasks; i++) {
+    // Get random base timestamp for creation time
+    const createdAt = faker.date.past({ years: 1 });
+
+    // Every task must have an assignee
+    const assignedTo = faker.helpers.arrayElement(companyUsers).id;
+
+    // Generate random task status
+    const status = randomEnum(TaskStatus);
+
+    // Only add reviewer if status is 'reviewed'
+    let reviewerId: string | null = null;
+    if (status === TaskStatus.reviewed) {
+      // Pick a different user than assignee as reviewer if possible
+      const potentialReviewers = companyUsers.filter((user) => user.id !== assignedTo);
+      if (potentialReviewers.length > 0) {
+        reviewerId = faker.helpers.arrayElement(potentialReviewers).id;
+      } else {
+        // If no other users, can use same user as reviewer
+        reviewerId = assignedTo;
+      }
+    }
+
+    // Set task type
+    const taskType = randomEnum(TaskType);
+
+    // Set category only if task type is 'category'
+    const category =
+      taskType === TaskType.category
+        ? faker.helpers.arrayElement(["Revenue", "Expenses", "Assets", "Liabilities", "Equity"])
+        : null;
+
+    // Set updatedAt based on status
+    let updatedAt = createdAt;
+    if (
+      status === TaskStatus.in_progress ||
+      status === TaskStatus.completed ||
+      status === TaskStatus.reviewed
+    ) {
+      // For active/completed tasks, update time is after creation time
+      updatedAt = faker.date.between({
+        from: createdAt,
+        to: new Date(),
+      });
+    }
+
+    // Set completedOn only if status is completed or reviewed
+    let completedOn: Date | null = null;
+    if (status === TaskStatus.completed || status === TaskStatus.reviewed) {
+      completedOn = faker.date.between({
+        from: updatedAt,
+        to: new Date(),
+      });
+    }
+
+    // Set resolution only if status is 'reviewed'
+    const resolution = status === TaskStatus.reviewed ? faker.lorem.paragraph() : null;
+
+    // Set due date (must be after created date)
+    const dueDate = faker.date.future({
+      refDate: createdAt,
+    });
+
+    // Generate title (one sentence)
+    const title = faker.lorem.sentence({ min: 3, max: 8 });
+
+    // Generate description (1-3 sentences)
+    const sentenceCount = faker.number.int({ min: 1, max: 3 });
+    const description = faker.lorem.sentences(sentenceCount);
+
+    // Randomly assign frequency for recurring tasks (30% chance)
+    const frequency = faker.datatype.boolean({ probability: 0.3 }) ? randomEnum(Frequency) : null;
+
+    // Create the task
+    const task: Task = {
+      id: createId(),
+      companyId: company.id,
+      title,
+      description,
+      createdAt,
+      updatedAt,
+      createdBy: faker.helpers.arrayElement(companyUsers).id,
+      dueDate,
+      frequency,
+      status,
+      resolution,
+      assignedTo,
+      reviewerId,
+      category,
+      completedOn,
+      taskType,
+    };
+
+    tasks.push(task);
+    logger.info(
+      `Generated task: ${task.title} (${task.id}) for company: ${company.id}, Status: ${task.status}, Type: ${task.taskType}`,
+    );
+  }
+
+  return tasks;
+}
+
+/**
+ * Creates tasks for all companies
+ */
+async function createTasks(
+  companies: Company[],
+  users: User[],
+  jsonMode: boolean = false,
+): Promise<Task[]> {
+  logger.info(`Creating tasks for ${companies.length} companies...`);
+
+  const allTasks: Task[] = [];
+
+  for (const company of companies) {
+    const tasks = createRandomTasksForCompany(company, users);
+    allTasks.push(...tasks);
+  }
+
+  // In JSON mode, just return the generated data
+  if (jsonMode) {
+    logger.info(`Generated data for ${allTasks.length} tasks in total`);
+    return allTasks;
+  }
+
+  // In DB mode, use createMany to insert all tasks at once
+  if (allTasks.length > 0) {
+    await prisma.task.createMany({
+      data: allTasks,
+      skipDuplicates: true,
+    });
+
+    logger.info(`Created ${allTasks.length} tasks in total`);
+  }
+
+  return allTasks;
+}
+
+/**
+ * Creates random journal lines for a journal entry
+ */
+function createRandomJournalLines(journalEntry: JournalEntry, accounts: Account[]): JournalLine[] {
+  // If status is Draft, it can have no journal lines
+  if (
+    journalEntry.status === JournalEntryStatus.Draft &&
+    faker.datatype.boolean({ probability: 0.7 })
+  ) {
+    return [];
+  }
+
+  // Determine if we should check for active accounts only
+  const now = DateTime.utc();
+  const transactionDate = DateTime.fromJSDate(journalEntry.transactionDate);
+  const requireActiveAccounts = transactionDate >= now;
+
+  // Filter accounts for this company
+  let availableAccounts = accounts.filter(
+    (account) => account.companyId === journalEntry.companyId,
+  );
+
+  // For present and future dates, only use active accounts
+  if (requireActiveAccounts) {
+    availableAccounts = availableAccounts.filter((account) => account.active);
+  }
+
+  if (availableAccounts.length === 0) {
+    logger.warn(
+      `No suitable accounts found for company ${journalEntry.companyId}, skipping journal lines for entry ${journalEntry.id}`,
+    );
+    return [];
+  }
+
+  // Group accounts by classification to ensure diverse classifications
+  const accountsByClassification = _.groupBy(availableAccounts, "classification");
+  const classifications = Object.keys(accountsByClassification);
+
+  // If no classifications exist, we can't create journal lines
+  if (classifications.length === 0) {
+    return [];
+  }
+
+  // Determine if we should create a single journal line with amount 0
+  if (faker.datatype.boolean({ probability: 0.1 })) {
+    // 10% chance to create a single line with zero amount
+    const account = faker.helpers.arrayElement(availableAccounts);
+    const journalLine: JournalLine = {
+      id: createId(),
+      companyId: journalEntry.companyId,
+      journalEntryId: journalEntry.id,
+      accountId: account.id,
+      description: faker.lorem.sentence(),
+      amount: 0,
+    };
+
+    return [journalLine];
+  }
+
+  // Determine number of journal lines (2-5 lines)
+  const numLines = faker.number.int({
+    min: 2,
+    max: Math.min(
+      MAX_JOURNAL_LINES_PER_ENTRY,
+      classifications.length > 1 ? classifications.length : 5,
+    ),
+  });
+
+  // Select different classifications if possible
+  let selectedClassifications: string[] = [];
+
+  // Try to get different classifications
+  if (classifications.length > 1) {
+    // Shuffle classifications
+    const shuffledClassifications = _.shuffle(classifications);
+    // Take as many as we need for the lines
+    selectedClassifications = shuffledClassifications.slice(0, numLines);
+  } else {
+    // If only one classification, use it for all lines
+    selectedClassifications = Array(numLines).fill(classifications[0]);
+  }
+
+  const journalLines: JournalLine[] = [];
+  let totalAmount = 0;
+
+  // Create n-1 journal lines with random amounts
+  for (let i = 0; i < numLines - 1; i++) {
+    // Try to use an account from a different classification
+    const classification = selectedClassifications[i];
+    const accountsForClassification = accountsByClassification[classification];
+    const account = faker.helpers.arrayElement(accountsForClassification);
+
+    // Generate a random amount between -500000000 and 500000000 (excluding 0)
+    let amount = 0;
+    while (amount === 0) {
+      amount = faker.number.int({ min: -500000000, max: 500000000 });
+    }
+
+    totalAmount += amount;
+
+    const journalLine: JournalLine = {
+      id: createId(),
+      companyId: journalEntry.companyId,
+      journalEntryId: journalEntry.id,
+      accountId: account.id,
+      description: faker.lorem.sentence(),
+      amount,
+    };
+
+    journalLines.push(journalLine);
+  }
+
+  // For the last line, try to use a different classification if possible
+  const lastClassification = selectedClassifications[numLines - 1];
+  const lastAccounts = accountsByClassification[lastClassification];
+  const balancingAccount = faker.helpers.arrayElement(lastAccounts);
+
+  const balancingLine: JournalLine = {
+    id: createId(),
+    companyId: journalEntry.companyId,
+    journalEntryId: journalEntry.id,
+    accountId: balancingAccount.id,
+    description: faker.lorem.sentence(),
+    amount: -totalAmount, // Negative of the sum to balance
+  };
+
+  journalLines.push(balancingLine);
+  logger.info(
+    `Generated ${journalLines.length} journal lines for journal entry ${journalEntry.id}`,
+  );
+
+  return journalLines;
+}
+
+/**
+ * Creates a random journal entry
+ */
+function createRandomJournalEntry(
+  company: Company,
+  period: Period,
+  users: User[],
+  displayId: number,
+): JournalEntry {
+  // Filter users for this company
+  const companyUsers = users.filter((user) => user.companyId === company.id);
+
+  // Select random user as creator
+  const createdBy = faker.helpers.arrayElement(companyUsers).id;
+
+  // Transaction date must be within the period (inclusive)
+  const minDate = DateTime.fromJSDate(period.startsOn);
+  const maxDate = DateTime.fromJSDate(period.endsOn);
+  const transactionDate = faker.date.between({
+    from: minDate.toJSDate(),
+    to: maxDate.toJSDate(),
+  });
+
+  // Created at should be after transaction date (usually)
+  const createdAt = faker.date.between({
+    from: transactionDate,
+    to: DateTime.utc().toJSDate(), // Can be created up to now
+  });
+
+  // Randomly decide if journal entry has been updated
+  const isUpdated = faker.datatype.boolean({ probability: 0.3 });
+  let updatedBy: string | null = null;
+  let updatedAt = createdAt;
+
+  if (isUpdated) {
+    // Pick another random user as updater (could be same as creator)
+    updatedBy = faker.helpers.arrayElement(companyUsers).id;
+
+    // Updated at must be after created at
+    updatedAt = faker.date.between({
+      from: createdAt,
+      to: DateTime.utc().toJSDate(),
+    });
+  }
+
+  // Randomly decide if journal entry is deleted
+  const isDeleted = faker.datatype.boolean({ probability: 0.05 }); // 5% chance of being deleted
+
+  // Current date for status determination
+  const now = DateTime.utc();
+
+  // Determine status based on period dates
+  let status: JournalEntryStatus;
+  const periodStart = DateTime.fromJSDate(period.startsOn);
+
+  // If period is in the future, status must be Scheduled
+  if (periodStart > now) {
+    status = JournalEntryStatus.Scheduled;
+  } else {
+    // If current date is within period or period is in the past, status can be any value
+    status = randomEnum(JournalEntryStatus);
+  }
+
+  // Random entry type from EntryType
+  const entryType = randomEnum(EntryType);
+
+  // Create journal entry data
+  const journalEntry: JournalEntry = {
+    id: createId(),
+    displayId,
+    companyId: company.id,
+    entryType,
+    periodId: period.id,
+    status,
+    deleted: isDeleted,
+    transactionDate,
+    createdAt,
+    createdBy,
+    updatedAt,
+    updatedBy,
+    description: faker.lorem.sentence(),
+  };
+
+  logger.info(
+    `Generated journal entry: ID: ${journalEntry.id}, DisplayId: ${journalEntry.displayId}, Type: ${journalEntry.entryType}, Status: ${journalEntry.status}, Deleted: ${journalEntry.deleted}`,
+  );
+  return journalEntry;
+}
+
+/**
+ * Creates journal line dimension associations
+ */
+function createJournalLineDimensions(
+  journalLines: JournalLine[],
+  dimensionValues: DimensionValue[],
+): JournalLineDimension[] {
+  // Group dimension values by company
+  const dimensionValuesByCompany = _.groupBy(dimensionValues, "companyId");
+
+  // Create journal line dimensions for approximately 30% of journal lines
+  const journalLineDimensions: JournalLineDimension[] = [];
+
+  for (const journalLine of journalLines) {
+    // 30% chance to add dimension values to this line
+    if (faker.datatype.boolean({ probability: 0.3 })) {
+      // Get dimension values for this company
+      const companyDimensionValues = dimensionValuesByCompany[journalLine.companyId] || [];
+
+      if (companyDimensionValues.length === 0) {
+        continue;
+      }
+
+      // Group dimension values by dimension to ensure we don't use multiple values from the same dimension
+      const valuesByDimension = _.groupBy(companyDimensionValues, "dimensionId");
+      const dimensionIds = Object.keys(valuesByDimension);
+
+      if (dimensionIds.length === 0) {
+        continue;
+      }
+
+      // Choose between 1 and 3 dimensions, or as many as are available
+      const numDimensions = Math.min(faker.number.int({ min: 1, max: 3 }), dimensionIds.length);
+
+      // Shuffle and pick random dimensions
+      const shuffledDimensionIds = _.shuffle(dimensionIds).slice(0, numDimensions);
+
+      // For each selected dimension, pick one of its values
+      for (const dimensionId of shuffledDimensionIds) {
+        const availableValues = valuesByDimension[dimensionId];
+        const dimensionValue = faker.helpers.arrayElement(availableValues);
+
+        const journalLineDimension: JournalLineDimension = {
+          id: createId(),
+          companyId: journalLine.companyId,
+          journalLineId: journalLine.id,
+          dimensionId: dimensionValue.dimensionId,
+          dimensionValueId: dimensionValue.id,
+          name: dimensionValue.dimensionName,
+          value: dimensionValue.value,
+        };
+
+        journalLineDimensions.push(journalLineDimension);
+
+        logger.info(
+          `Generated journal line dimension: ${journalLineDimension.name}=${journalLineDimension.value} ` +
+            `for journal line ${journalLine.id}`,
+        );
+      }
+    }
+  }
+
+  return journalLineDimensions;
+}
+
+/**
+ * Creates journal entries for all periods of all companies
+ */
+async function createJournalEntries(
+  companies: Company[],
+  periods: Period[],
+  users: User[],
+  accounts: Account[],
+  dimensionValues: DimensionValue[],
+  jsonMode: boolean = false,
+): Promise<{
+  journalEntries: JournalEntry[];
+  journalLines: JournalLine[];
+  journalLineDimensions: JournalLineDimension[];
+}> {
+  logger.info(`Creating journal entries for all periods...`);
+
+  const allJournalEntries: JournalEntry[] = [];
+  const allJournalLines: JournalLine[] = [];
+  let globalDisplayId = 1; // Start with 1 for display IDs
+
+  // Sort all periods by start date to ensure displayId increases with time
+  const allPeriodsSorted = [...periods].sort(
+    (a, b) =>
+      DateTime.fromJSDate(a.startsOn).toMillis() - DateTime.fromJSDate(b.startsOn).toMillis(),
+  );
+
+  // Go through all periods in chronological order
+  for (const period of allPeriodsSorted) {
+    const company = companies.find((c) => c.id === period.companyId)!;
+
+    // Determine a random number of journal entries for this period
+    const numEntries = faker.number.int({
+      min: MIN_JOURNAL_ENTRIES_PER_PERIOD,
+      max: MAX_JOURNAL_ENTRIES_PER_PERIOD,
+    });
+
+    logger.info(
+      `Creating ${numEntries} journal entries for period ${period.id} (${period.companyId})...`,
+    );
+
+    // Create journal entries for this period
+    for (let i = 0; i < numEntries; i++) {
+      const journalEntry = createRandomJournalEntry(company, period, users, globalDisplayId++);
+
+      allJournalEntries.push(journalEntry);
+
+      // Create journal lines for this entry
+      const journalLines = createRandomJournalLines(journalEntry, accounts);
+      allJournalLines.push(...journalLines);
+    }
+  }
+
+  // Create journal line dimensions
+  const allJournalLineDimensions = createJournalLineDimensions(allJournalLines, dimensionValues);
+
+  // In JSON mode, just return the generated data
+  if (jsonMode) {
+    logger.info(
+      `Generated data for ${allJournalEntries.length} journal entries with ${allJournalLines.length} journal lines ` +
+        `and ${allJournalLineDimensions.length} journal line dimensions in total`,
+    );
+    return {
+      journalEntries: allJournalEntries,
+      journalLines: allJournalLines,
+      journalLineDimensions: allJournalLineDimensions,
+    };
+  }
+
+  // In DB mode, use createMany to insert all journal entries at once
+  await prisma.journalEntry.createMany({
+    data: allJournalEntries,
+    skipDuplicates: true,
+  });
+
+  // Then create all journal lines
+  if (allJournalLines.length > 0) {
+    await prisma.journalLine.createMany({
+      data: allJournalLines,
+      skipDuplicates: true,
+    });
+  }
+
+  // Then create all journal line dimensions
+  if (allJournalLineDimensions.length > 0) {
+    await prisma.journalLineDimension.createMany({
+      data: allJournalLineDimensions,
+      skipDuplicates: true,
+    });
+  }
+
+  logger.info(
+    `Created ${allJournalEntries.length} journal entries with ${allJournalLines.length} journal lines ` +
+      `and ${allJournalLineDimensions.length} journal line dimensions in total`,
+  );
+
+  return {
+    journalEntries: allJournalEntries,
+    journalLines: allJournalLines,
+    journalLineDimensions: allJournalLineDimensions,
+  };
+}
+
+/**
+ * Main function to execute data generation process
+ */
+async function main(args = process.argv.slice(2)) {
+  // Parse command line arguments
+  const argv = yargs(args)
+    .option("json", {
+      type: "boolean",
+      description: "Output data as JSON instead of writing to database",
+      default: false,
+    })
+    .help()
+    .parseSync(); // Use parseSync() instead of .argv to avoid Promise
+
+  const jsonMode = argv.json;
+
+  logger.info("Starting to generate fake data");
 
   try {
-    if (!argv.json) {
-      // Only connect to the database if we're not in JSON mode
-      await prisma.$connect();
-      logger.info('Connected to database successfully');
-    }
-    
     // Generate organizations
-    const organizations = await createOrganizations();
-    
+    const organizations: Organization[] = await createOrganizations(NUM_ORGANIZATIONS, jsonMode);
+
     // Generate companies for each organization
-    const companies = await createCompanies(organizations);
-    
+    const companies: Company[] = await createCompanies(organizations, jsonMode);
+
     // Generate users for each company
-    const users = await createUsers(companies);
-    
+    const users: User[] = await createUsers(companies, jsonMode);
+
     // Generate accounts for each company
-    const accounts = await createAccounts(companies);
-    
+    const accounts: Account[] = await createAccounts(companies, jsonMode);
+
     // Generate periods for each company
-    const periods = await createPeriods(companies);
-    
-    if (argv.json) {
+    const periods: Period[] = await createPeriods(companies, jsonMode);
+
+    // Generate dimensions for each company
+    const dimensions: Dimension[] = await createDimensions(companies, jsonMode);
+
+    // Generate dimension values for each dimension
+    const dimensionValues: DimensionValue[] = await createDimensionValues(dimensions, jsonMode);
+
+    // Generate vendors from Vendor dimension values
+    const vendors: Vendor[] = await createVendorsFromDimensions(dimensionValues, jsonMode);
+
+    // Generate customers from Customer dimension values
+    const customers: Customer[] = await createCustomersFromDimensions(dimensionValues, jsonMode);
+
+    // Generate tasks for all companies
+    const tasks: Task[] = await createTasks(companies, users, jsonMode);
+
+    // Generate journal entries, journal lines, and journal line dimensions for each period
+    const { journalEntries, journalLines, journalLineDimensions } = await createJournalEntries(
+      companies,
+      periods,
+      users,
+      accounts,
+      dimensionValues,
+      jsonMode,
+    );
+
+    if (jsonMode) {
       // In JSON mode, output all data to stdout
       const jsonOutput = {
         organizations,
         companies,
         users,
         accounts,
-        periods
+        periods,
+        dimensions,
+        dimensionValues,
+        vendors,
+        customers,
+        tasks,
+        journalEntries,
+        journalLines,
+        journalLineDimensions,
       };
-      
+
       // Pretty print JSON with 2-space indentation
       console.log(JSON.stringify(jsonOutput, null, 2));
     }
-    
-    logger.info('Finished generating fake data successfully');
+
+    logger.info("Finished generating fake data successfully");
+
+    return {
+      organizations,
+      companies,
+      users,
+      accounts,
+      periods,
+      dimensions,
+      dimensionValues,
+      vendors,
+      customers,
+      tasks,
+      journalEntries,
+      journalLines,
+      journalLineDimensions,
+    };
   } catch (error) {
-    logger.error('Error generating fake data:', error);
+    logger.error("Error generating fake data:", error);
+
+    // No need to disconnect - the prisma client is only initialized if needed
+
     process.exit(1);
-  } finally {
-    if (!argv.json) {
-      await prisma.$disconnect();
-    }
   }
 }
 
-// Execute the script
-main().catch((error) => {
-  logger.error('Unhandled error in script execution:', error);
-  process.exit(1);
-});
+// Execute the script if this file is run directly
+if (require.main === module) {
+  main().catch((error) => {
+    logger.error("Unhandled error in script execution:", error);
+    process.exit(1);
+  });
+}
+
+// Named exports
+export {
+  createOrganizations,
+  createCompanies,
+  createUsers,
+  createAccounts,
+  createPeriods,
+  createDimensions,
+  createDimensionValues,
+  createVendorsFromDimensions,
+  createCustomersFromDimensions,
+  createTasks,
+  createJournalEntries,
+  createJournalLineDimensions,
+  randomEnum,
+  main,
+};

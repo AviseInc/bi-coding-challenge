@@ -10,7 +10,7 @@ async function checkForReadyAndStart(clackWrapper: ClackWrapper, introMessage: s
     message: "Are you ready to begin?",
   });
 
-  if (! usrReady) {
+  if (!usrReady) {
     clackWrapper.exit("That's okay! Come back when you're ready!");
   }
 }
@@ -162,7 +162,7 @@ async function doInitialSetup(clackWrapper: ClackWrapper) {
     message: "I solemnly swear that docker is installed and running.",
   });
 
-  if (! usrReady) {
+  if (!usrReady) {
     clackWrapper.exit("Check readme section 2.1 for a link to install docker if needed!");
   }
 
@@ -195,7 +195,7 @@ async function doCompleteRefresh(clackWrapper: ClackWrapper) {
       "I understand that all local data will be DELETED and will be UNRECOVERABLE and want to proceed.",
   });
 
-  if (! usrReady) {
+  if (!usrReady) {
     clackWrapper.exit("Exiting without modifying data.");
   }
 
@@ -204,7 +204,7 @@ async function doCompleteRefresh(clackWrapper: ClackWrapper) {
       "I doubly confirm that I understand that all local data will be DELETED and will be UNRECOVERABLE and still want to proceed.",
   });
 
-  if (! usrReady) {
+  if (!usrReady) {
     clackWrapper.exit("Exiting without modifying data.");
   }
 
@@ -226,7 +226,7 @@ async function main() {
     })
     .parseSync();
 
-  const {initialSetup, helpMe, completeRefresh} = args;
+  const { initialSetup, helpMe, completeRefresh } = args;
 
   const moreThanOneOption =
     Number(initialSetup || 0) + Number(helpMe || 0) + Number(completeRefresh || 0);

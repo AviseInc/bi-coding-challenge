@@ -39,6 +39,7 @@ DROP TYPE task_status;
 DROP TYPE dimension_source;
 DROP TYPE journal_entry_status;
 DROP TYPE period_status;
+DROP TYPE entry_type;
 DROP TYPE account_special_use_type;
 DROP TYPE account_sub_type;
 DROP TYPE account_type;
